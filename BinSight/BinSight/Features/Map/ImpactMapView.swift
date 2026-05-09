@@ -1,176 +1,151 @@
 import SwiftUI
-import MapKit
 import Combine
 
-/// Impact map. v0 reads the user's own scans from Convex (real-time) and pins
-/// them at the captured coordinates, colored by decision.
+/// Region-based impact view. Switches between country / state / city
+/// aggregations using the new server `map:aggregate` query.
 struct ImpactMapView: View {
-    @State private var rows: [ClassificationDoc] = []
+    @State private var rows: [RegionCellDoc] = []
     @State private var subscription: AnyCancellable?
-    @StateObject private var location = LocationProvider()
-    @State private var selectedId: String?
-    @State private var cameraPosition: MapCameraPosition = .automatic
+    @State private var level: Level = .country
+
+    enum Level: String, CaseIterable, Identifiable {
+        case country = "Country"
+        case state = "State"
+        case city = "City"
+        var id: String { rawValue }
+        var serverKey: String { rawValue.lowercased() }
+        var icon: String {
+            switch self {
+            case .country: return "globe"
+            case .state:   return "map"
+            case .city:    return "building.2"
+            }
+        }
+    }
 
     var body: some View {
-        ZStack(alignment: .top) {
-            Map(position: $cameraPosition, selection: $selectedId) {
-                ForEach(pinnedRows) { row in
-                    if let coord = coordinate(of: row) {
-                        Annotation(row.items.first?.label ?? "Scan", coordinate: coord) {
-                            ScanPin(row: row, isSelected: selectedId == row._id)
+        NavigationStack {
+            ZStack {
+                LinearGradient(
+                    colors: [
+                        Color(red: 0.06, green: 0.18, blue: 0.22),
+                        Color(red: 0.04, green: 0.10, blue: 0.14),
+                    ],
+                    startPoint: .top, endPoint: .bottom
+                ).ignoresSafeArea()
+
+                VStack(spacing: 16) {
+                    levelPicker
+                        .padding(.horizontal, 18)
+                        .padding(.top, 8)
+                    if rows.isEmpty {
+                        emptyState
+                    } else {
+                        leaderboard
+                    }
+                    Spacer(minLength: 0)
+                }
+            }
+            .navigationTitle("Impact map")
+            .navigationBarTitleDisplayMode(.inline)
+        }
+        .onAppear { resubscribe() }
+        .onChange(of: level) { _, _ in resubscribe() }
+        .onDisappear { subscription?.cancel() }
+    }
+
+    private func resubscribe() {
+        subscription?.cancel()
+        subscription = ConvexService.shared.subscribeMap(level: level.serverKey)
+            .receive(on: DispatchQueue.main)
+            .sink(receiveCompletion: { _ in }, receiveValue: { rows = $0 })
+    }
+
+    private var levelPicker: some View {
+        HStack(spacing: 6) {
+            ForEach(Level.allCases) { l in
+                Button {
+                    withAnimation(BinSightTokens.Motion.snap) { level = l }
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: l.icon).imageScale(.small)
+                        Text(l.rawValue).font(.subheadline.weight(.semibold))
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .frame(maxWidth: .infinity)
+                    .foregroundStyle(level == l ? .white : .white.opacity(0.65))
+                    .background {
+                        if level == l {
+                            Capsule().fill(BinSightTokens.Color.accent)
                         }
-                        .tag(row._id)
                     }
                 }
-                UserAnnotation()
-            }
-            .mapStyle(.standard(elevation: .realistic, pointsOfInterest: .excludingAll))
-            .ignoresSafeArea()
-
-            header
-                .padding(.horizontal, 16)
-                .padding(.top, 12)
-        }
-        .safeAreaInset(edge: .bottom) {
-            if pinnedRows.isEmpty {
-                emptyHint.padding(.horizontal, 16).padding(.bottom, 110)
-            } else if let id = selectedId, let row = rows.first(where: { $0._id == id }) {
-                selectedCard(row).padding(.horizontal, 16).padding(.bottom, 110)
-            } else {
-                Spacer().frame(height: 90)
+                .buttonStyle(.plain)
             }
         }
-        .onAppear {
-            location.start()
-            subscription = ConvexService.shared.subscribeHistory()
-                .receive(on: DispatchQueue.main)
-                .sink(receiveCompletion: { _ in }, receiveValue: { rows = $0 })
-        }
-        .onDisappear { subscription?.cancel() }
-        .onReceive(location.$last.compactMap { $0 }) { loc in
-            guard pinnedRows.isEmpty else { return }
-            cameraPosition = .region(MKCoordinateRegion(center: loc.coordinate,
-                                                        latitudinalMeters: 1500,
-                                                        longitudinalMeters: 1500))
-        }
+        .padding(6)
+        .glassSurface(Capsule(), variant: .regular)
     }
 
-    private var pinnedRows: [ClassificationDoc] {
-        rows.filter { $0.lat != nil && $0.lng != nil && $0.status == "done" }
-    }
-
-    private func coordinate(of row: ClassificationDoc) -> CLLocationCoordinate2D? {
-        guard let lat = row.lat, let lng = row.lng else { return nil }
-        return CLLocationCoordinate2D(latitude: lat, longitude: lng)
-    }
-
-    private var header: some View {
-        HStack(spacing: 10) {
-            HStack(spacing: 8) {
-                Image(systemName: "globe.americas.fill")
-                    .foregroundStyle(BinSightTokens.Color.recycle)
-                Text("Impact map")
-                    .font(.headline)
-            }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 9)
-            .glassSurface(Capsule(), variant: .regular)
-
-            Spacer(minLength: 0)
-
-            Text("\(pinnedRows.count) scans")
-                .font(.caption.weight(.semibold))
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .glassSurface(Capsule(), variant: .clear)
-        }
-    }
-
-    private var emptyHint: some View {
-        VStack(spacing: 6) {
-            Text("No scans pinned here yet")
-                .font(.headline)
-            Text("Allow location and capture a few items — they'll show up on this map.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-        }
-        .padding(16)
-        .frame(maxWidth: .infinity)
-        .glassSurface(RoundedRectangle(cornerRadius: 22, style: .continuous), variant: .regular)
-    }
-
-    private func selectedCard(_ row: ClassificationDoc) -> some View {
-        HStack(spacing: 12) {
-            if let urlString = row.imageUrl, let url = URL(string: urlString) {
-                AsyncImage(url: url) { img in
-                    img.resizable().scaledToFill()
-                } placeholder: {
-                    Color.gray.opacity(0.2)
+    private var leaderboard: some View {
+        ScrollView {
+            LazyVStack(spacing: 10) {
+                ForEach(Array(rows.enumerated()), id: \.element.id) { index, cell in
+                    cellRow(rank: index + 1, cell: cell)
                 }
-                .frame(width: 64, height: 64)
-                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
             }
+            .padding(.horizontal, 18)
+            .padding(.bottom, 110)
+        }
+    }
+
+    private func cellRow(rank: Int, cell: RegionCellDoc) -> some View {
+        HStack(spacing: 14) {
+            Text("#\(rank)")
+                .font(.headline.monospaced())
+                .frame(width: 38, alignment: .leading)
+                .foregroundStyle(.white.opacity(0.7))
+
             VStack(alignment: .leading, spacing: 4) {
-                Text(row.items.first?.label ?? "Scan").font(.subheadline.weight(.semibold))
-                if let item = row.items.first {
-                    Text(item.decision.capitalized)
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 8).padding(.vertical, 3)
-                        .background(decisionColor(item.decision), in: Capsule())
+                Text(cell.label.isEmpty ? "Unknown" : cell.label)
+                    .font(.headline)
+                    .foregroundStyle(.white)
+                HStack(spacing: 8) {
+                    Label("\(cell.count)", systemImage: "camera.fill")
+                        .font(.caption)
+                        .foregroundStyle(.white.opacity(0.75))
+                    Label("\(cell.recycled) recycled", systemImage: "leaf.fill")
+                        .font(.caption)
+                        .foregroundStyle(BinSightTokens.Color.recycle)
                 }
-                Text(Date(timeIntervalSince1970: row.capturedAt / 1000)
-                        .formatted(date: .abbreviated, time: .shortened))
-                    .font(.caption2).foregroundStyle(.secondary)
+                ProgressView(
+                    value: Double(cell.recycled),
+                    total: Double(max(cell.count, 1))
+                )
+                .tint(BinSightTokens.Color.recycle)
             }
             Spacer()
-            Button {
-                selectedId = nil
-            } label: {
-                Image(systemName: "xmark.circle.fill")
-                    .foregroundStyle(.secondary)
-                    .imageScale(.large)
-            }
-            .buttonStyle(.plain)
         }
-        .padding(12)
+        .padding(14)
+        .glassSurface(RoundedRectangle(cornerRadius: 18, style: .continuous), variant: .regular)
+    }
+
+    private var emptyState: some View {
+        VStack(spacing: 10) {
+            Image(systemName: "globe.badge.chevron.backward")
+                .font(.system(size: 44, weight: .light))
+                .foregroundStyle(BinSightTokens.Color.recycle)
+            Text("No data here yet").font(.headline).foregroundStyle(.white)
+            Text("As people scan items, this map fills in with cities, states, and countries.")
+                .font(.caption)
+                .foregroundStyle(.white.opacity(0.7))
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 40)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(28)
         .glassSurface(RoundedRectangle(cornerRadius: 22, style: .continuous), variant: .regular)
-    }
-
-    private func decisionColor(_ d: String) -> Color {
-        switch d {
-        case "recycle": return BinSightTokens.Color.recycle
-        case "compost": return BinSightTokens.Color.compost
-        case "hazard":  return BinSightTokens.Color.hazard
-        default:        return BinSightTokens.Color.trash
-        }
-    }
-}
-
-private struct ScanPin: View {
-    let row: ClassificationDoc
-    let isSelected: Bool
-
-    var body: some View {
-        let color: Color = {
-            guard let item = row.items.first else { return .gray }
-            switch item.decision {
-            case "recycle": return BinSightTokens.Color.recycle
-            case "compost": return BinSightTokens.Color.compost
-            case "hazard":  return BinSightTokens.Color.hazard
-            default:        return BinSightTokens.Color.trash
-            }
-        }()
-        return ZStack {
-            Circle()
-                .fill(color.opacity(0.25))
-                .frame(width: isSelected ? 44 : 30, height: isSelected ? 44 : 30)
-            Circle()
-                .fill(color)
-                .frame(width: isSelected ? 22 : 16, height: isSelected ? 22 : 16)
-                .overlay(Circle().stroke(.white, lineWidth: 2))
-        }
-        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isSelected)
+        .padding(.horizontal, 18)
     }
 }

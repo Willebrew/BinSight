@@ -8,11 +8,13 @@
  * @module
  */
 
+import type * as auth from "../auth.js";
 import type * as classifications from "../classifications.js";
 import type * as classifyWaste from "../classifyWaste.js";
 import type * as facilities from "../facilities.js";
 import type * as facilitiesCache from "../facilitiesCache.js";
 import type * as files from "../files.js";
+import type * as http from "../http.js";
 import type * as impactTable from "../impactTable.js";
 import type * as map from "../map.js";
 import type * as metrics from "../metrics.js";
@@ -25,11 +27,13 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  auth: typeof auth;
   classifications: typeof classifications;
   classifyWaste: typeof classifyWaste;
   facilities: typeof facilities;
   facilitiesCache: typeof facilitiesCache;
   files: typeof files;
+  http: typeof http;
   impactTable: typeof impactTable;
   map: typeof map;
   metrics: typeof metrics;

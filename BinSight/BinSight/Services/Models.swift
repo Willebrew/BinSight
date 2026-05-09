@@ -12,12 +12,15 @@ struct ItemDoc: Codable, Hashable, Identifiable {
 
 struct ClassificationDoc: Codable, Identifiable, Hashable {
     var _id: String
-    var clientId: String
+    var userId: String?
     var storageId: String
     var capturedAt: Double
     var lat: Double?
     var lng: Double?
     var geohash5: String?
+    var city: String?
+    var state: String?
+    var country: String?
     var status: String     // pending | done | error
     var model: String?
     var items: [ItemDoc]
@@ -44,11 +47,12 @@ struct MetricsDoc: Codable, Hashable {
     }
 }
 
-struct MapCellDoc: Codable, Hashable, Identifiable {
-    var geohash5: String
+struct RegionCellDoc: Codable, Hashable, Identifiable {
+    var key: String
+    var label: String
     var count: Int
     var recycled: Int
-    var id: String { geohash5 }
+    var id: String { key }
 }
 
 struct FacilityDoc: Codable, Hashable, Identifiable {

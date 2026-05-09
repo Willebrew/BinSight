@@ -1,23 +1,31 @@
 import { v } from "convex/values";
 import { mutation, query, internalMutation } from "./_generated/server";
+import { auth } from "./auth";
 import { itemValidator } from "./schema";
 
 export const create = mutation({
   args: {
-    clientId: v.string(),
     storageId: v.id("_storage"),
     lat: v.optional(v.number()),
     lng: v.optional(v.number()),
     geohash5: v.optional(v.string()),
+    city: v.optional(v.string()),
+    state: v.optional(v.string()),
+    country: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    const userId = await auth.getUserId(ctx);
+    if (!userId) throw new Error("Not authenticated");
     return await ctx.db.insert("classifications", {
-      clientId: args.clientId,
+      userId,
       storageId: args.storageId,
       capturedAt: Date.now(),
       lat: args.lat,
       lng: args.lng,
       geohash5: args.geohash5,
+      city: args.city,
+      state: args.state,
+      country: args.country,
       status: "pending",
       items: [],
       citations: [],
@@ -55,26 +63,43 @@ export const writeError = internalMutation({
 });
 
 export const getById = query({
-  args: { id: v.id("classifications"), clientId: v.string() },
-  handler: async (ctx, { id, clientId }) => {
+  args: { id: v.id("classifications") },
+  handler: async (ctx, { id }) => {
+    const userId = await auth.getUserId(ctx);
     const row = await ctx.db.get(id);
     if (!row) return null;
-    if (row.clientId !== clientId) return null;
+    if (row.userId !== userId) return null;
     const imageUrl = await ctx.storage.getUrl(row.storageId);
     return { ...row, imageUrl };
   },
 });
 
-export const listForClient = query({
-  args: { clientId: v.string(), limit: v.optional(v.number()) },
-  handler: async (ctx, { clientId, limit }) => {
+export const listForUser = query({
+  args: {},
+  handler: async (ctx) => {
+    const userId = await auth.getUserId(ctx);
+    if (!userId) return [];
     const rows = await ctx.db
       .query("classifications")
-      .withIndex("by_client_capturedAt", (q) => q.eq("clientId", clientId))
+      .withIndex("by_user_capturedAt", (q) => q.eq("userId", userId))
       .order("desc")
-      .take(limit ?? 50);
+      .take(50);
     return await Promise.all(
       rows.map(async (r) => ({ ...r, imageUrl: await ctx.storage.getUrl(r.storageId) })),
     );
+  },
+});
+
+export const remove = mutation({
+  args: { id: v.id("classifications") },
+  handler: async (ctx, { id }) => {
+    const userId = await auth.getUserId(ctx);
+    if (!userId) throw new Error("Not authenticated");
+    const row = await ctx.db.get(id);
+    if (!row || row.userId !== userId) return;
+    if (row.storageId) {
+      await ctx.storage.delete(row.storageId);
+    }
+    await ctx.db.delete(id);
   },
 });

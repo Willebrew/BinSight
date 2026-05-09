@@ -1,7 +1,6 @@
 import SwiftUI
 
 struct SettingsView: View {
-    @State private var clientId: String = ClientIdentity.current
     @State private var convexURL: String = ConvexService.deploymentUrl
 
     var body: some View {
@@ -54,17 +53,18 @@ struct SettingsView: View {
         .glassSurface(RoundedRectangle(cornerRadius: 16, style: .continuous), variant: .regular)
     }
 
+    @EnvironmentObject private var convex: ConvexService
     private var deviceSection: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("Device").font(.headline)
-            Text("Client ID")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
-            Text(clientId)
-                .font(.caption2.monospaced())
-                .lineLimit(1)
-                .truncationMode(.middle)
-            Text("This ID identifies your scans on the backend until proper accounts are added.")
+            Text("Account").font(.headline)
+            HStack(spacing: 8) {
+                Image(systemName: convex.isAuthenticated ? "person.crop.circle.badge.checkmark" : "person.crop.circle.badge.questionmark")
+                    .foregroundStyle(convex.isAuthenticated ? BinSightTokens.Color.recycle : BinSightTokens.Color.hazard)
+                Text(convex.isAuthenticated ? "Signed in (anonymous)" : "Not signed in")
+                    .font(.callout)
+                Spacer()
+            }
+            Text("Anonymous accounts identify your scans on the backend. Sign In with Apple is on the roadmap.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }

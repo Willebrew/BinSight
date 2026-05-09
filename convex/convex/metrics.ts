@@ -1,12 +1,15 @@
-import { v } from "convex/values";
 import { query } from "./_generated/server";
+import { auth } from "./auth";
 
 export const summary = query({
-  args: { clientId: v.string() },
-  handler: async (ctx, { clientId }) => {
+  args: {},
+  handler: async (ctx) => {
+    const userId = await auth.getUserId(ctx);
+    if (!userId) return null;
+
     const rows = await ctx.db
       .query("classifications")
-      .withIndex("by_client_capturedAt", (q) => q.eq("clientId", clientId))
+      .withIndex("by_user_capturedAt", (q) => q.eq("userId", userId))
       .filter((q) => q.eq(q.field("status"), "done"))
       .collect();
 
@@ -37,7 +40,10 @@ export const summary = query({
       totalRecycled,
       totalTrashed,
       totalCo2Kg: Number(totalCo2.toFixed(3)),
-      accuracy: totalRecycled + totalTrashed === 0 ? 0 : totalRecycled / (totalRecycled + totalTrashed),
+      accuracy:
+        totalRecycled + totalTrashed === 0
+          ? 0
+          : totalRecycled / (totalRecycled + totalTrashed),
       byMaterial,
       byDay,
     };

@@ -7,11 +7,11 @@ import { classifyImage, verifyTopItem } from "./sage";
 import { estimateCo2Kg } from "./impactTable";
 
 export const run = action({
-  args: { id: v.id("classifications"), clientId: v.string() },
-  handler: async (ctx, { id, clientId }) => {
-    const row = await ctx.runQuery(api.classifications.getById, { id, clientId });
+  args: { id: v.id("classifications") },
+  handler: async (ctx, { id }) => {
+    const row = await ctx.runQuery(api.classifications.getById, { id });
     if (!row) throw new Error("Classification row not found or not yours");
-    if (row.status !== "pending") return; // idempotent
+    if (row.status !== "pending") return;
 
     try {
       const blob = await ctx.storage.get(row.storageId);

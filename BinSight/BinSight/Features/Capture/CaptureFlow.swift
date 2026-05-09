@@ -9,10 +9,14 @@ final class CaptureFlow: ObservableObject {
     @Published private(set) var isWorking = false
     @Published private(set) var lastError: String?
 
-    /// Uploads the JPEG to Convex storage, creates a pending classification
-    /// row, and kicks off the classifyWaste action. Returns the row id; the
-    /// caller subscribes to it via `ConvexService.subscribeClassification`.
-    func classify(jpeg: Data, lat: Double?, lng: Double?) async throws -> String {
+    func classify(
+        jpeg: Data,
+        lat: Double?,
+        lng: Double?,
+        city: String?,
+        state: String?,
+        country: String?
+    ) async throws -> String {
         isWorking = true
         defer { isWorking = false }
         lastError = nil
@@ -22,7 +26,9 @@ final class CaptureFlow: ObservableObject {
             ? Geohash.encode(latitude: lat!, longitude: lng!, precision: 5)
             : nil
         let id = try await ConvexService.shared.createClassification(
-            storageId: storageId, lat: lat, lng: lng, geohash5: geohash5
+            storageId: storageId,
+            lat: lat, lng: lng, geohash5: geohash5,
+            city: city, state: state, country: country
         )
 
         Task { try? await runWithRetry(id: id) }

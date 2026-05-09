@@ -5,7 +5,10 @@ import Combine
 final class LocationProvider: NSObject, ObservableObject, CLLocationManagerDelegate {
     @Published private(set) var last: CLLocation?
     @Published private(set) var status: CLAuthorizationStatus = .notDetermined
+    @Published private(set) var placemark: CLPlacemark?
     private let manager = CLLocationManager()
+    private let geocoder = CLGeocoder()
+    private var lastGeocodeAt: Date = .distantPast
 
     override init() {
         super.init()
@@ -37,11 +40,22 @@ final class LocationProvider: NSObject, ObservableObject, CLLocationManagerDeleg
 
     nonisolated func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
         guard let loc = locations.last else { return }
-        Task { @MainActor in self.last = loc }
+        Task { @MainActor in
+            self.last = loc
+            // Reverse-geocode at most once per minute to populate city/state/country.
+            if Date().timeIntervalSince(self.lastGeocodeAt) > 60 {
+                self.lastGeocodeAt = Date()
+                Task.detached { [geocoder = self.geocoder] in
+                    if let place = try? await geocoder.reverseGeocodeLocation(loc).first {
+                        await MainActor.run { self.placemark = place }
+                    }
+                }
+            }
+        }
     }
 }
 
-/// 5-character geohash, ~5km precision. Adapted from public-domain encoder.
+/// 5-character geohash, ~5km precision.
 enum Geohash {
     private static let base32 = Array("0123456789bcdefghjkmnpqrstuvwxyz")
 

@@ -1,5 +1,6 @@
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
+import { authTables } from "@convex-dev/auth/server";
 
 export const decisionValidator = v.union(
   v.literal("recycle"),
@@ -23,17 +24,19 @@ export const classificationStatusValidator = v.union(
   v.literal("error"),
 );
 
-// `clientId` is a UUID generated on the device on first launch and stored in
-// the iOS Keychain. Treat it as an identity hint, not a secure identity —
-// real auth lands in a follow-up phase.
 export default defineSchema({
+  ...authTables,
+
   classifications: defineTable({
-    clientId: v.string(),
+    userId: v.id("users"),
     storageId: v.id("_storage"),
     capturedAt: v.number(),
     lat: v.optional(v.number()),
     lng: v.optional(v.number()),
     geohash5: v.optional(v.string()),
+    city: v.optional(v.string()),
+    state: v.optional(v.string()),
+    country: v.optional(v.string()),
     status: classificationStatusValidator,
     model: v.optional(v.string()),
     items: v.array(itemValidator),
@@ -42,9 +45,12 @@ export default defineSchema({
     verified: v.boolean(),
     errorMessage: v.optional(v.string()),
   })
-    .index("by_client_capturedAt", ["clientId", "capturedAt"])
+    .index("by_user_capturedAt", ["userId", "capturedAt"])
     .index("by_geohash5", ["geohash5"])
-    .index("by_status", ["status"]),
+    .index("by_status", ["status"])
+    .index("by_country", ["country"])
+    .index("by_state", ["state"])
+    .index("by_city", ["city"]),
 
   localRulesCache: defineTable({
     geohash5: v.string(),

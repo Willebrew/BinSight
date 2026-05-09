@@ -179,7 +179,10 @@ struct CameraScreen: View {
             let id = try await flow.classify(
                 jpeg: jpeg,
                 lat: location.last?.coordinate.latitude,
-                lng: location.last?.coordinate.longitude
+                lng: location.last?.coordinate.longitude,
+                city: location.placemark?.locality,
+                state: location.placemark?.administrativeArea,
+                country: location.placemark?.country
             )
             HapticEngine.ok()
             await MainActor.run { flow.activeId = .init(value: id) }
