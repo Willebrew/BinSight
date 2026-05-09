@@ -8,7 +8,8 @@ struct DashboardView: View {
     @State private var bag: Set<AnyCancellable> = []
     @State private var animatedCo2: Double = 0
     @State private var firstScanCelebration = false
-    @State private var hasSeenFirstScan = false
+    @AppStorage("binsight.hasSeenFirstScan") private var hasSeenFirstScan = false
+    @State private var hasReceivedInitialMetrics = false
 
     var body: some View {
         NavigationStack {
@@ -41,13 +42,26 @@ struct DashboardView: View {
             ConvexService.shared.subscribeMetrics()
                 .receive(on: DispatchQueue.main)
                 .sink(receiveCompletion: { _ in }, receiveValue: { newValue in
-                    let oldScans = metrics?.totalScans ?? 0
+                    let oldScans = metrics?.totalScans
                     metrics = newValue
                     let target = newValue?.totalCo2Kg ?? 0
                     withAnimation(.easeOut(duration: 0.9)) { animatedCo2 = target }
-                    if (newValue?.totalScans ?? 0) > 0 && oldScans == 0 && !hasSeenFirstScan {
+
+                    let newScans = newValue?.totalScans ?? 0
+                    // Only celebrate when:
+                    // 1. We've already received at least one snapshot (so we
+                    //    know the prior state for real, not nil-as-0).
+                    // 2. The count actually crossed 0 -> 1.
+                    // 3. The user has never seen the celebration.
+                    if hasReceivedInitialMetrics, oldScans == 0, newScans == 1, !hasSeenFirstScan {
                         hasSeenFirstScan = true
                         withAnimation(.easeIn(duration: 0.3)) { firstScanCelebration = true }
+                    }
+                    if !hasReceivedInitialMetrics {
+                        hasReceivedInitialMetrics = true
+                        // If they already had scans before this version of the
+                        // app (or before AppStorage was set), don't ever show.
+                        if newScans > 0 { hasSeenFirstScan = true }
                     }
                 })
                 .store(in: &bag)
