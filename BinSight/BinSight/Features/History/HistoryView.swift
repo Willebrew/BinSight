@@ -1,0 +1,74 @@
+import SwiftUI
+import Combine
+
+struct HistoryView: View {
+    @State private var rows: [ClassificationDoc] = []
+    @State private var subscription: AnyCancellable?
+    @State private var openId: String?
+
+    var body: some View {
+        ScrollView {
+            LazyVStack(spacing: 12) {
+                ForEach(rows) { row in
+                    Button { openId = row._id } label: { HistoryRow(doc: row) }
+                        .buttonStyle(.plain)
+                }
+            }
+            .padding(20)
+        }
+        .navigationTitle("History")
+        .task {
+            subscription = ConvexService.shared.subscribeHistory()
+                .receive(on: DispatchQueue.main)
+                .sink(receiveCompletion: { _ in }, receiveValue: { rows = $0 })
+        }
+        .sheet(item: Binding(
+            get: { openId.map { Identified(value: $0) } },
+            set: { openId = $0?.value }
+        )) { id in
+            ResultCardView(classificationId: id.value)
+        }
+    }
+
+    private struct Identified: Identifiable { let value: String; var id: String { value } }
+}
+
+private struct HistoryRow: View {
+    let doc: ClassificationDoc
+
+    var body: some View {
+        HStack(spacing: 12) {
+            if let urlString = doc.imageUrl, let url = URL(string: urlString) {
+                AsyncImage(url: url) { img in img.resizable().scaledToFill() }
+                placeholder: { Color.gray.opacity(0.2) }
+                    .frame(width: 64, height: 64)
+                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            }
+            VStack(alignment: .leading, spacing: 4) {
+                Text(doc.items.first?.label ?? "Pending")
+                    .font(.headline)
+                Text(Date(timeIntervalSince1970: doc.capturedAt / 1000).formatted(date: .abbreviated, time: .shortened))
+                    .font(.caption).foregroundStyle(.secondary)
+                if let first = doc.items.first {
+                    Text(first.decision.capitalized)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 8).padding(.vertical, 3)
+                        .background(color(for: first.decision), in: Capsule())
+                }
+            }
+            Spacer()
+        }
+        .padding(12)
+        .glassSurface(RoundedRectangle(cornerRadius: 16, style: .continuous), variant: .regular)
+    }
+
+    private func color(for decision: String) -> Color {
+        switch decision {
+        case "recycle": return BinSightTokens.Color.recycle
+        case "compost": return BinSightTokens.Color.compost
+        case "hazard":  return BinSightTokens.Color.hazard
+        default:        return BinSightTokens.Color.trash
+        }
+    }
+}
