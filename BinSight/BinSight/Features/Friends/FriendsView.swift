@@ -48,6 +48,8 @@ struct FriendsView: View {
     private var addCard: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Add a friend").font(.headline)
+            Text("Type your friend's exact email — there's no public directory.")
+                .font(.caption).foregroundStyle(.secondary)
             HStack {
                 Image(systemName: "envelope.fill").foregroundStyle(.secondary)
                 TextField("their.email@example.com", text: $emailDraft)

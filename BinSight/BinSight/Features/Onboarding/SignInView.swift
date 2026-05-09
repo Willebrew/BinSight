@@ -4,11 +4,12 @@ struct SignInView: View {
     @EnvironmentObject private var convex: ConvexService
     enum Mode { case signIn, signUp }
     @State private var mode: Mode = .signIn
+    @State private var name = ""
     @State private var email = ""
     @State private var password = ""
     @FocusState private var focused: Field?
 
-    enum Field { case email, password }
+    enum Field { case name, email, password }
 
     var body: some View {
         ZStack {
@@ -83,6 +84,17 @@ struct SignInView: View {
 
     private var formCard: some View {
         VStack(spacing: 12) {
+            if mode == .signUp {
+                field(
+                    icon: "person.fill",
+                    placeholder: "Name",
+                    text: $name,
+                    autoCap: .words,
+                    focus: .name,
+                    content: .name
+                )
+                .transition(.opacity.combined(with: .move(edge: .top)))
+            }
             field(
                 icon: "envelope.fill",
                 placeholder: "Email",
@@ -103,6 +115,7 @@ struct SignInView: View {
         .padding(14)
         .background(.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 18).stroke(.white.opacity(0.10)))
+        .animation(.spring(response: 0.32, dampingFraction: 0.85), value: mode)
     }
 
     @ViewBuilder
@@ -111,6 +124,7 @@ struct SignInView: View {
         placeholder: String,
         text: Binding<String>,
         keyboard: UIKeyboardType = .default,
+        autoCap: TextInputAutocapitalization = .never,
         isSecure: Bool = false,
         focus: Field,
         content: UITextContentType
@@ -124,7 +138,7 @@ struct SignInView: View {
                     TextField("", text: text, prompt: Text(placeholder).foregroundStyle(.white.opacity(0.45)))
                 }
             }
-            .textInputAutocapitalization(.never)
+            .textInputAutocapitalization(autoCap)
             .autocorrectionDisabled()
             .keyboardType(keyboard)
             .textContentType(content)
@@ -160,15 +174,20 @@ struct SignInView: View {
     private var canSubmit: Bool {
         let okPassword = password.count >= 6
         let okEmail = email.contains("@") && email.contains(".")
-        return okEmail && okPassword && convex.authState != .signingIn
+        let okName = mode == .signIn || name.trimmingCharacters(in: .whitespaces).count >= 2
+        return okEmail && okPassword && okName && convex.authState != .signingIn
     }
 
     private func submit() {
         focused = nil
+        let trimmedEmail = email.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
         Task {
             switch mode {
-            case .signIn: await convex.signIn(email: email.trimmingCharacters(in: .whitespacesAndNewlines), password: password)
-            case .signUp: await convex.signUp(email: email.trimmingCharacters(in: .whitespacesAndNewlines), password: password)
+            case .signIn:
+                await convex.signIn(email: trimmedEmail, password: password)
+            case .signUp:
+                await convex.signUp(name: trimmedName, email: trimmedEmail, password: password)
             }
         }
     }

@@ -48,11 +48,14 @@ final class ConvexService: ObservableObject {
         await runPasswordFlow(email: email, password: password, flow: .signIn)
     }
 
-    func signUp(email: String, password: String) async {
+    func signUp(name: String, email: String, password: String) async {
         await runPasswordFlow(email: email, password: password, flow: .signUp)
         if authState == .signedIn {
-            // Stamp the email on the user's profile for friend lookup.
+            // Stamp the email + name on the user's profile.
             try? await setProfileEmail(email)
+            if !name.isEmpty {
+                try? await setDisplayName(name)
+            }
         }
     }
 
