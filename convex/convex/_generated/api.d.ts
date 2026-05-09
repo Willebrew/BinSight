@@ -8,6 +8,7 @@
  * @module
  */
 
+import type * as appleAuth from "../appleAuth.js";
 import type * as auth from "../auth.js";
 import type * as classifications from "../classifications.js";
 import type * as classifyWaste from "../classifyWaste.js";
@@ -18,6 +19,7 @@ import type * as http from "../http.js";
 import type * as impactTable from "../impactTable.js";
 import type * as map from "../map.js";
 import type * as metrics from "../metrics.js";
+import type * as profiles from "../profiles.js";
 import type * as sage from "../sage.js";
 
 import type {
@@ -27,6 +29,7 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  appleAuth: typeof appleAuth;
   auth: typeof auth;
   classifications: typeof classifications;
   classifyWaste: typeof classifyWaste;
@@ -37,6 +40,7 @@ declare const fullApi: ApiFromModules<{
   impactTable: typeof impactTable;
   map: typeof map;
   metrics: typeof metrics;
+  profiles: typeof profiles;
   sage: typeof sage;
 }>;
 

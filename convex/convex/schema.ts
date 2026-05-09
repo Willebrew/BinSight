@@ -52,6 +52,16 @@ export default defineSchema({
     .index("by_state", ["state"])
     .index("by_city", ["city"]),
 
+  profiles: defineTable({
+    userId: v.id("users"),
+    displayName: v.optional(v.string()),
+    email: v.optional(v.string()),
+    appleSub: v.optional(v.string()),
+    createdAt: v.number(),
+  })
+    .index("by_userId", ["userId"])
+    .index("by_appleSub", ["appleSub"]),
+
   localRulesCache: defineTable({
     geohash5: v.string(),
     rulesJson: v.string(),

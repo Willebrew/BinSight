@@ -61,3 +61,11 @@ struct FacilityDoc: Codable, Hashable, Identifiable {
     var snippet: String
     var id: String { url }
 }
+
+struct ProfileDoc: Codable, Hashable {
+    var userId: String
+    var displayName: String?
+    var email: String?
+    var appleSub: String?
+    var isAppleLinked: Bool
+}

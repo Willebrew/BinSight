@@ -130,4 +130,28 @@ final class ConvexService: ObservableObject {
         let args: [String: ConvexEncodable?] = ["lat": lat, "lng": lng, "geohash5": geohash5]
         return try await client.action("facilities:nearby", with: args)
     }
+
+    // MARK: - Profile
+
+    func subscribeProfile() -> AnyPublisher<ProfileDoc?, ClientError> {
+        client.subscribe(to: "profiles:me", yielding: ProfileDoc?.self)
+            .eraseToAnyPublisher()
+    }
+
+    func setDisplayName(_ name: String) async throws {
+        let args: [String: ConvexEncodable?] = ["name": name]
+        try await client.mutation("profiles:setDisplayName", with: args)
+    }
+
+    struct AppleVerifyResult: Decodable {
+        let sub: String
+        let email: String?
+        let fullName: String?
+    }
+
+    func verifyAppleIdentity(identityToken: String, fullName: String?) async throws -> AppleVerifyResult {
+        var args: [String: ConvexEncodable?] = ["identityToken": identityToken]
+        if let fullName { args["fullName"] = fullName }
+        return try await client.action("appleAuth:verifyAppleToken", with: args)
+    }
 }
