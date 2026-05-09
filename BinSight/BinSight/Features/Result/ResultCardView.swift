@@ -420,28 +420,8 @@ private struct SwipeTriageScreen: View {
     }
 
     private func actionRow(items: [(offset: Int, item: ItemDoc)]) -> some View {
-        HStack(spacing: 12) {
-            triageButton("Ignore", system: "xmark", kind: .neutral, color: .secondary) {
-                guard let head = items.first else { return }
-                HapticEngine.tick()
-                send(itemIndex: head.offset, state: "rejected", flickX: -600)
-            }
-            triageButton("Confirm", system: "checkmark", kind: .primary, color: BinSightTokens.Color.recycle) {
-                guard let head = items.first else { return }
-                HapticEngine.ok()
-                send(itemIndex: head.offset, state: "confirmed", flickX: 600)
-            }
-        }
-        .overlay(alignment: .top) {
+        VStack(spacing: 10) {
             HStack(spacing: 14) {
-                Button {
-                    Task {
-                        try? await ConvexService.shared.reviewAll(id: doc._id, state: "confirmed")
-                        HapticEngine.success.notificationOccurred(.success)
-                    }
-                } label: {
-                    Text("Confirm all").font(.caption.weight(.semibold))
-                }
                 Button {
                     Task {
                         try? await ConvexService.shared.reviewAll(id: doc._id, state: "rejected")
@@ -450,10 +430,30 @@ private struct SwipeTriageScreen: View {
                     Text("Ignore all").font(.caption.weight(.semibold))
                 }
                 Spacer()
+                Button {
+                    Task {
+                        try? await ConvexService.shared.reviewAll(id: doc._id, state: "confirmed")
+                        HapticEngine.success.notificationOccurred(.success)
+                    }
+                } label: {
+                    Text("Confirm all").font(.caption.weight(.semibold))
+                }
             }
             .foregroundStyle(.secondary)
             .padding(.horizontal, 4)
-            .offset(y: -36)
+
+            HStack(spacing: 12) {
+                triageButton("Ignore", system: "xmark", kind: .neutral, color: .secondary) {
+                    guard let head = items.first else { return }
+                    HapticEngine.tick()
+                    send(itemIndex: head.offset, state: "rejected", flickX: -600)
+                }
+                triageButton("Confirm", system: "checkmark", kind: .primary, color: BinSightTokens.Color.recycle) {
+                    guard let head = items.first else { return }
+                    HapticEngine.ok()
+                    send(itemIndex: head.offset, state: "confirmed", flickX: 600)
+                }
+            }
         }
     }
 
@@ -646,18 +646,10 @@ private struct TriageCard: View {
                 }
 
                 Spacer(minLength: 0)
-
-                HStack(spacing: 8) {
-                    Image(systemName: "arrow.left").imageScale(.small).foregroundStyle(.secondary)
-                    Text("ignore").font(.caption2).foregroundStyle(.secondary)
-                    Spacer()
-                    Text("confirm").font(.caption2).foregroundStyle(.secondary)
-                    Image(systemName: "arrow.right").imageScale(.small).foregroundStyle(.secondary)
-                }
             }
             .padding(16)
         }
-        .frame(height: 380)
+        .frame(height: 360)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color.white, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
         .overlay(
