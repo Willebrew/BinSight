@@ -163,6 +163,7 @@ export async function classifyImage(
   lng?: number,
   city?: string,
   state?: string,
+  onProgress?: (snapshot: Partial<AgentResult>) => Promise<void> | void,
 ): Promise<AgentResult> {
   const apiKey = process.env.PERPLEXITY_API_KEY;
   if (!apiKey) {
@@ -173,7 +174,9 @@ export async function classifyImage(
   const base64 = arrayBufferToBase64(imageBytes);
   const dataUrl = `data:${contentType || "image/jpeg"};base64,${base64}`;
 
-  const body = {
+  const useStreaming = !!onProgress;
+
+  const body: any = {
     model,
     response_format: { type: "json_schema", json_schema: wasteSchema },
     messages: [
@@ -187,6 +190,7 @@ export async function classifyImage(
       },
     ],
   };
+  if (useStreaming) body.stream = true;
 
   const res = await fetch(CHAT_URL, {
     method: "POST",
@@ -200,17 +204,175 @@ export async function classifyImage(
     const text = await res.text();
     throw new Error(`Perplexity API ${res.status}: ${text.slice(0, 500)}`);
   }
-  const json: any = await res.json();
 
-  const parsed = extractStructured(json);
-  const flatCitations: string[] = Array.isArray(json.citations) ? json.citations : [];
+  if (!useStreaming) {
+    const json: any = await res.json();
+    const parsed = extractStructured(json);
+    const flatCitations: string[] = Array.isArray(json.citations) ? json.citations : [];
+    return {
+      items: parsed.items ?? [],
+      sources: parsed.sources ?? [],
+      localRules: parsed.localRules ?? "",
+      citations: flatCitations,
+      model,
+    };
+  }
+
+  // Streaming path: read SSE, accumulate the JSON body, and emit
+  // progress snapshots as more items become parseable. We re-parse the
+  // partial buffer on every chunk; expensive (O(n²)) but n is small.
+  const reader = (res.body as any)?.getReader?.();
+  if (!reader) {
+    // Fallback: consume non-streaming
+    const txt = await res.text();
+    const json: any = (() => { try { return JSON.parse(txt); } catch { return {}; } })();
+    const parsed = extractStructured(json);
+    return {
+      items: parsed.items ?? [],
+      sources: parsed.sources ?? [],
+      localRules: parsed.localRules ?? "",
+      citations: Array.isArray(json.citations) ? json.citations : [],
+      model,
+    };
+  }
+
+  const decoder = new TextDecoder();
+  let sseBuffer = "";
+  let contentBuffer = "";
+  let lastEmittedCount = -1;
+  let lastCitations: string[] = [];
+
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    sseBuffer += decoder.decode(value, { stream: true });
+
+    let nlIdx: number;
+    while ((nlIdx = sseBuffer.indexOf("\n")) >= 0) {
+      const line = sseBuffer.slice(0, nlIdx).trim();
+      sseBuffer = sseBuffer.slice(nlIdx + 1);
+      if (!line.startsWith("data:")) continue;
+      const data = line.slice(5).trim();
+      if (data === "[DONE]") continue;
+      try {
+        const parsed = JSON.parse(data);
+        const delta = parsed?.choices?.[0]?.delta?.content;
+        if (typeof delta === "string") contentBuffer += delta;
+        if (Array.isArray(parsed?.citations)) lastCitations = parsed.citations;
+      } catch {
+        /* ignore non-JSON keepalive lines */
+      }
+    }
+
+    const partial = parsePartialAgentJson(contentBuffer);
+    if (partial.items && partial.items.length > lastEmittedCount) {
+      lastEmittedCount = partial.items.length;
+      try {
+        await onProgress?.({
+          items: partial.items,
+          sources: partial.sources ?? [],
+          localRules: partial.localRules ?? "",
+          citations: lastCitations,
+          model,
+        });
+      } catch {
+        /* progress callback errors must not abort the stream */
+      }
+    }
+  }
+
+  // Final parse from the accumulated content
+  const finalParsed = parsePartialAgentJson(contentBuffer);
   return {
-    items: parsed.items ?? [],
-    sources: parsed.sources ?? [],
-    localRules: parsed.localRules ?? "",
-    citations: flatCitations,
+    items: finalParsed.items ?? [],
+    sources: finalParsed.sources ?? [],
+    localRules: finalParsed.localRules ?? "",
+    citations: lastCitations,
     model,
   };
+}
+
+/**
+ * Tolerantly extract complete `items[]` and `sources[]` JSON objects from
+ * a half-finished JSON document. Used during SSE streaming to emit
+ * partial results before the full response has arrived. Anything we
+ * can't parse is just dropped from the snapshot.
+ */
+function parsePartialAgentJson(buf: string): {
+  items?: RawItem[];
+  sources?: RawSource[];
+  localRules?: string;
+} {
+  if (!buf) return {};
+  // Try the easy path first: the full doc is parseable.
+  try {
+    const j = JSON.parse(buf);
+    if (j && typeof j === "object") return j;
+  } catch {
+    /* fall through */
+  }
+  return {
+    items: collectArray(buf, '"items"') as RawItem[] | undefined,
+    sources: collectArray(buf, '"sources"') as RawSource[] | undefined,
+    localRules: extractString(buf, '"localRules"'),
+  };
+}
+
+function collectArray(buf: string, key: string): unknown[] | undefined {
+  const keyIdx = buf.indexOf(key);
+  if (keyIdx < 0) return undefined;
+  const open = buf.indexOf("[", keyIdx);
+  if (open < 0) return undefined;
+  const out: unknown[] = [];
+  let i = open + 1;
+  let depth = 0;
+  let start = -1;
+  let inString = false;
+  let escape = false;
+  while (i < buf.length) {
+    const c = buf[i];
+    if (escape) { escape = false; i++; continue; }
+    if (c === "\\") { escape = true; i++; continue; }
+    if (c === '"') { inString = !inString; i++; continue; }
+    if (inString) { i++; continue; }
+    if (c === "{") { if (depth === 0) start = i; depth++; }
+    else if (c === "}") {
+      depth--;
+      if (depth === 0 && start >= 0) {
+        const slice = buf.slice(start, i + 1);
+        try { out.push(JSON.parse(slice)); } catch { /* skip incomplete */ }
+        start = -1;
+      }
+    } else if (c === "]" && depth === 0) {
+      break;
+    }
+    i++;
+  }
+  return out;
+}
+
+function extractString(buf: string, key: string): string | undefined {
+  const idx = buf.indexOf(key);
+  if (idx < 0) return undefined;
+  const colon = buf.indexOf(":", idx + key.length);
+  if (colon < 0) return undefined;
+  let i = colon + 1;
+  while (i < buf.length && buf[i] !== '"') i++;
+  if (i >= buf.length) return undefined;
+  let out = "";
+  i++;
+  while (i < buf.length) {
+    const c = buf[i];
+    if (c === "\\" && i + 1 < buf.length) {
+      out += buf[i + 1];
+      i += 2;
+      continue;
+    }
+    if (c === '"') return out;
+    out += c;
+    i++;
+  }
+  return undefined; // string didn't close yet
 }
 
 /**

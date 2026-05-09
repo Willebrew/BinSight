@@ -69,7 +69,7 @@ struct ResultCardView: View {
                 }
                 .padding(.horizontal, 16)
                 .padding(.top, 16)
-                .padding(.bottom, 30)
+                .padding(.bottom, 140)
             }
         }
     }

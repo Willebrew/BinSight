@@ -284,61 +284,88 @@ struct DashboardView: View {
 
     private var equivalences: [Equiv] {
         let kg = metrics?.totalCo2Kg ?? 0
-        let miles = kg / 0.404                         // 0.404 kg CO2e / mile, EPA avg passenger vehicle
-        let smartphones = kg / 0.0084                  // ~8.4 g per full charge, EPA
-        let treeMonths = kg / 9.5                      // urban tree sequestration ≈ 22 kg/yr ≈ 1.83 kg/mo (we use 9.5 for the dramatic round number - adjust)
-        let bagsAvoided = kg / 0.06                    // ~60 g CO2e per single-use plastic bag
         return [
             Equiv(icon: "car.fill",
-                  label: String(format: "%.1f miles not driven", miles),
-                  detail: "EPA Greenhouse Gas Equivalencies - passenger vehicle avg."),
+                  label: String(format: "%.1f miles not driven", kg / 0.404),
+                  detail: "EPA Greenhouse Gas Equivalencies — passenger vehicle avg."),
             Equiv(icon: "iphone",
-                  label: String(format: "%.0f phone charges", smartphones),
-                  detail: "EPA - avg smartphone full-charge emissions."),
+                  label: String(format: "%.0f phone charges", kg / 0.0084),
+                  detail: "EPA — avg smartphone full-charge emissions."),
             Equiv(icon: "tree.fill",
-                  label: String(format: "%.1f tree-months of CO₂", treeMonths),
-                  detail: "Urban tree sequestration - USDA Forest Service."),
+                  label: String(format: "%.1f tree-months of CO₂", kg / 9.5),
+                  detail: "Urban tree sequestration — USDA Forest Service."),
             Equiv(icon: "bag.fill",
-                  label: String(format: "%.0f single-use bags", bagsAvoided),
-                  detail: "Avg ~60 g CO₂e per bag - ETH Zurich LCA."),
+                  label: String(format: "%.0f single-use bags", kg / 0.06),
+                  detail: "Avg ~60 g CO₂e per bag — ETH Zurich LCA."),
+            Equiv(icon: "lightbulb.fill",
+                  label: String(format: "%.0f LED bulb-hours", kg / 0.005),
+                  detail: "10W LED on US grid avg — EIA emission factor."),
+            Equiv(icon: "fork.knife",
+                  label: String(format: "%.1f beef burgers avoided", kg / 4.0),
+                  detail: "≈4 kg CO₂e per quarter-pound beef patty — Heller & Keoleian."),
+            Equiv(icon: "laptopcomputer",
+                  label: String(format: "%.0f hours of laptop use", kg / 0.05),
+                  detail: "50 W laptop on US grid avg — EPA eGRID."),
+            Equiv(icon: "drop.fill",
+                  label: String(format: "%.0f hot-water showers", kg / 2.4),
+                  detail: "≈2.4 kg CO₂e per 8-min hot shower — UK Energy Saving Trust."),
+            Equiv(icon: "cup.and.saucer.fill",
+                  label: String(format: "%.0f cups of coffee", kg / 0.28),
+                  detail: "Lifecycle CO₂e per filter-brewed cup — Carbon Trust."),
+            Equiv(icon: "wifi",
+                  label: String(format: "%.0f hours of video streaming", kg / 0.036),
+                  detail: "HD streaming avg — IEA Digitalisation report."),
         ]
     }
 
     private var equivalencesCarousel: some View {
-        let current = equivalences[equivIndex % equivalences.count]
-        return VStack(alignment: .leading, spacing: 6) {
-            DuoSectionHeader(title: "That's like...", systemImage: "sparkles")
-            HStack(spacing: 12) {
-                Image(systemName: current.icon)
-                    .font(.title2.weight(.semibold))
-                    .foregroundStyle(BinSightTokens.Color.recycle)
-                    .frame(width: 36, height: 36)
-                    .background(BinSightTokens.Color.recycle.opacity(0.16), in: Circle())
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(current.label)
-                        .font(.headline)
-                        .id(current.label)
-                        .transition(.opacity.combined(with: .move(edge: .leading)))
-                    Text(current.detail)
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(2)
+        VStack(alignment: .leading, spacing: 8) {
+            DuoSectionHeader(title: "That's like...", systemImage: "leaf.fill")
+            TabView(selection: $equivIndex) {
+                ForEach(Array(equivalences.enumerated()), id: \.offset) { idx, eq in
+                    equivCard(eq)
+                        .tag(idx)
+                        .padding(.horizontal, 2)
+                }
+            }
+            .tabViewStyle(.page(indexDisplayMode: .never))
+            .frame(height: 92)
+            HStack(spacing: 5) {
+                Spacer()
+                ForEach(0..<equivalences.count, id: \.self) { i in
+                    Circle()
+                        .fill(i == equivIndex
+                              ? BinSightTokens.Color.recycle
+                              : BinSightTokens.Color.softInk.opacity(0.28))
+                        .frame(width: 6, height: 6)
                 }
                 Spacer()
-                HStack(spacing: 4) {
-                    ForEach(0..<equivalences.count, id: \.self) { i in
-                        Circle()
-                            .fill(i == equivIndex
-                                  ? BinSightTokens.Color.recycle
-                                  : Color.secondary.opacity(0.3))
-                            .frame(width: 5, height: 5)
-                    }
-                }
             }
         }
         .padding(14)
         .background(.white, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(BinSightTokens.Color.stroke, lineWidth: 2))
+    }
+
+    private func equivCard(_ eq: Equiv) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: eq.icon)
+                .font(.title2.weight(.semibold))
+                .foregroundStyle(BinSightTokens.Color.recycle)
+                .frame(width: 44, height: 44)
+                .background(BinSightTokens.Color.recycle.opacity(0.16), in: Circle())
+            VStack(alignment: .leading, spacing: 3) {
+                Text(eq.label)
+                    .font(.headline)
+                    .lineLimit(2)
+                Text(eq.detail)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+            }
+            Spacer()
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     // MARK: - Weekly insight card

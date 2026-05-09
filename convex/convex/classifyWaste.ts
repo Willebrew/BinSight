@@ -46,6 +46,75 @@ export const run = action({
       const bytes = await blob.arrayBuffer();
       const contentType = (blob as any).type ?? "image/jpeg";
 
+      // Streaming progress callback: as soon as the model has emitted
+      // any complete items, we patch the row with a partial snapshot so
+      // the UI sees them while the rest of the response is still
+      // streaming. Snapshots are throttled by the natural cadence of
+      // SSE chunks; we just guard against pushing identical state.
+      let lastEmittedCount = 0;
+      const onProgress = async (snapshot: any) => {
+        const partialItems: any[] = Array.isArray(snapshot?.items) ? snapshot.items : [];
+        if (partialItems.length <= lastEmittedCount) return;
+        lastEmittedCount = partialItems.length;
+
+        const stagedItems: StoredItem[] = partialItems.map((it) => {
+          const massGramsHint =
+            typeof it?.estimatedMassG === "number" && it.estimatedMassG > 0
+              ? it.estimatedMassG
+              : undefined;
+          const co2 = estimateCo2(
+            String(it?.material ?? "unknown"),
+            (it?.decision ?? "trash") as any,
+            massGramsHint,
+          );
+          return {
+            label: String(it?.label ?? "…"),
+            material: String(it?.material ?? "unknown"),
+            decision: (it?.decision ?? "trash") as any,
+            confidence: clamp01(typeof it?.confidence === "number" ? it.confidence : 0),
+            estimatedMassG: Number((co2.massKg * 1000).toFixed(2)),
+            massSource: massGramsHint !== undefined ? "model" : "default",
+            co2Kg: co2.co2Kg,
+            co2KgLow: co2.co2KgLow,
+            co2KgHigh: co2.co2KgHigh,
+            co2Method: co2.method,
+            disposalNotes: String(it?.disposalNotes ?? ""),
+            sourceIndices: Array.isArray(it?.sourceIndices)
+              ? it.sourceIndices.filter((n: any) => Number.isInteger(n) && n >= 0)
+              : [],
+            reviewState: "pending",
+          };
+        });
+
+        const stagedSources: StoredSource[] = (Array.isArray(snapshot?.sources) ? snapshot.sources : [])
+          .filter((s: any) => s?.url)
+          .map((s: any) => ({
+            url: String(s.url),
+            title: String(s.title ?? hostOf(s.url)),
+            publisher: String(s.publisher ?? hostOf(s.url)),
+            snippet: String(s.snippet ?? ""),
+            tier: tierFor(String(s.url)),
+            kind: (s.kind === "material" || s.kind === "rule" || s.kind === "both")
+              ? s.kind
+              : "rule",
+            isLocal: isLocalSource(String(s.url), row.city ?? undefined, row.state ?? undefined),
+            supportsItemIndices: [],
+          }));
+
+        try {
+          await ctx.runMutation(internal.classifications.writePartial, {
+            id,
+            items: stagedItems,
+            sources: stagedSources,
+            localRules: typeof snapshot?.localRules === "string" ? snapshot.localRules : undefined,
+            citations: Array.isArray(snapshot?.citations) ? snapshot.citations : [],
+            model: String(snapshot?.model ?? "sonar-pro"),
+          });
+        } catch {
+          /* never abort the stream because of a partial-write hiccup */
+        }
+      };
+
       const agent = await classifyImage(
         bytes,
         contentType,
@@ -53,6 +122,7 @@ export const run = action({
         row.lng,
         row.city ?? undefined,
         row.state ?? undefined,
+        onProgress,
       );
 
       // 1. Build the item list with mass + co2 ranges + review state.

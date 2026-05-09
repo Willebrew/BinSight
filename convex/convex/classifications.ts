@@ -65,6 +65,33 @@ export const setVerified = internalMutation({
   },
 });
 
+/**
+ * Write an in-progress streaming snapshot. Status stays `pending` so the
+ * UI knows more is coming, but items + sources + localRules are filled
+ * in as soon as we can parse them out of the partial response.
+ */
+export const writePartial = internalMutation({
+  args: {
+    id: v.id("classifications"),
+    items: v.array(itemValidator),
+    sources: v.array(sourceValidator),
+    localRules: v.optional(v.string()),
+    citations: v.array(v.string()),
+    model: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const row = await ctx.db.get(args.id);
+    if (!row || row.status !== "pending") return;
+    await ctx.db.patch(args.id, {
+      items: args.items,
+      sources: args.sources,
+      localRules: args.localRules,
+      citations: args.citations,
+      model: args.model,
+    });
+  },
+});
+
 export const writeError = internalMutation({
   args: { id: v.id("classifications"), errorMessage: v.string() },
   handler: async (ctx, { id, errorMessage }) => {
