@@ -55,7 +55,7 @@ struct DashboardView: View {
                     Image(systemName: "leaf.fill").foregroundStyle(.white.opacity(0.85))
                 }
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    Text(String(format: "%.2f", m?.totalCo2Kg ?? 0))
+                    Text(String(format: "%.2f", Double(m?.totalCo2Kg ?? 0)))
                         .font(.system(size: 56, weight: .heavy, design: .rounded))
                         .foregroundStyle(.white)
                     Text("kg")
