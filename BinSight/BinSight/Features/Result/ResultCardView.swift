@@ -328,7 +328,7 @@ private struct SwipeTriageScreen: View {
                 .padding(.horizontal, 16)
                 .padding(.top, 4)
 
-            ZStack(alignment: .top) {
+            ZStack {
                 ForEach(visibleStack(items), id: \.offset) { entry in
                     let depth = entry.depth
                     let isTop = depth == 0
@@ -386,8 +386,8 @@ private struct SwipeTriageScreen: View {
                     finishedOverlay
                 }
             }
-            .padding(.top, 14)
-            .frame(maxHeight: .infinity, alignment: .top)
+            .padding(.vertical, 14)
+            .frame(maxHeight: .infinity)
 
             actionRow(items: items)
                 .padding(.horizontal, 16)
