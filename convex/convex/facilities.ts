@@ -9,7 +9,7 @@ const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 
 export const nearby = action({
   args: { lat: v.number(), lng: v.number(), geohash5: v.string() },
-  handler: async (ctx, { lat, lng, geohash5 }) => {
+  handler: async (ctx, { lat, lng, geohash5 }): Promise<Array<{ title: string; url: string; snippet: string }>> => {
     const cached = await ctx.runQuery(api.facilitiesCache.getCached, { geohash5 });
     if (cached && Date.now() - cached.fetchedAt < ONE_DAY_MS) {
       return JSON.parse(cached.facilitiesJson);

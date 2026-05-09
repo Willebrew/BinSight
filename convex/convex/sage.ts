@@ -1,3 +1,5 @@
+"use node";
+
 // Perplexity classifier for BinSight.
 //
 // Uses /chat/completions with sonar-pro: web search is built into the model,
