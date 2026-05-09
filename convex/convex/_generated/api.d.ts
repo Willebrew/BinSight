@@ -15,6 +15,7 @@ import type * as classifyWaste from "../classifyWaste.js";
 import type * as facilities from "../facilities.js";
 import type * as facilitiesCache from "../facilitiesCache.js";
 import type * as files from "../files.js";
+import type * as friends from "../friends.js";
 import type * as http from "../http.js";
 import type * as impactTable from "../impactTable.js";
 import type * as map from "../map.js";
@@ -36,6 +37,7 @@ declare const fullApi: ApiFromModules<{
   facilities: typeof facilities;
   facilitiesCache: typeof facilitiesCache;
   files: typeof files;
+  friends: typeof friends;
   http: typeof http;
   impactTable: typeof impactTable;
   map: typeof map;

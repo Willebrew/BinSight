@@ -69,3 +69,24 @@ struct ProfileDoc: Codable, Hashable {
     var appleSub: String?
     var isAppleLinked: Bool
 }
+
+struct FriendsDoc: Codable, Hashable {
+    var accepted: [FriendDoc]
+    var incoming: [FriendDoc]
+    var outgoing: [FriendDoc]
+}
+
+struct FriendDoc: Codable, Hashable, Identifiable {
+    var friendshipId: String
+    var status: String
+    var requestedBy: String
+    var otherUserId: String
+    var otherDisplayName: String?
+    var otherEmail: String?
+    var id: String { friendshipId }
+}
+
+struct FriendRequestResult: Codable, Hashable {
+    var status: String   // pending | accepted | self | no_such_user
+    var friendshipId: String?
+}

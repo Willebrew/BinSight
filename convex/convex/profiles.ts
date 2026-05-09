@@ -26,6 +26,28 @@ export const me = query({
   },
 });
 
+export const setEmail = mutation({
+  args: { email: v.string() },
+  handler: async (ctx, { email }) => {
+    const userId = await auth.getUserId(ctx);
+    if (!userId) throw new Error("Not authenticated");
+    const trimmed = email.trim().toLowerCase();
+    const existing = await ctx.db
+      .query("profiles")
+      .withIndex("by_userId", (q) => q.eq("userId", userId))
+      .unique();
+    if (existing) {
+      await ctx.db.patch(existing._id, { email: trimmed });
+    } else {
+      await ctx.db.insert("profiles", {
+        userId,
+        email: trimmed,
+        createdAt: Date.now(),
+      });
+    }
+  },
+});
+
 export const setDisplayName = mutation({
   args: { name: v.string() },
   handler: async (ctx, { name }) => {

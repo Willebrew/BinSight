@@ -2,23 +2,33 @@ import Foundation
 import ConvexMobile
 import Security
 
-/// AnonymousAuthProvider mints a session JWT by calling the `auth:signIn`
-/// action exposed by `@convex-dev/auth`. Stores the JWT in Keychain so it
-/// survives app restarts. The user identity is durable; if the device
-/// reinstalls without keychain restoration we fall back to a fresh anonymous
-/// account, which is acceptable for v0.
-final class AnonymousAuthProvider: AuthProvider {
+/// Auth provider that issues a Convex Auth session JWT via the `Password`
+/// provider. `pendingCredentials` is set by the SignInView before calling
+/// `client.login()`; once signed in, the JWT lives in Keychain.
+final class PasswordAuthProvider: AuthProvider {
     typealias T = String  // the JWT
 
     private let deploymentURL: String
+
+    enum Flow: String { case signIn, signUp }
+
+    /// Set by the UI immediately before triggering `client.login()`. Cleared
+    /// on success.
+    var pendingCredentials: (email: String, password: String, flow: Flow)?
 
     init(deploymentURL: URL) {
         self.deploymentURL = deploymentURL.absoluteString
     }
 
     func login(onIdToken: @Sendable @escaping (String?) -> Void) async throws -> String {
-        let token = try await signInAnonymous()
+        guard let creds = pendingCredentials else {
+            throw NSError(domain: "Auth", code: -10, userInfo: [
+                NSLocalizedDescriptionKey: "Missing credentials"
+            ])
+        }
+        let token = try await passwordSignIn(email: creds.email, password: creds.password, flow: creds.flow)
         TokenStore.write(token)
+        pendingCredentials = nil
         onIdToken(token)
         return token
     }
@@ -28,26 +38,34 @@ final class AnonymousAuthProvider: AuthProvider {
             onIdToken(cached)
             return cached
         }
-        return try await login(onIdToken: onIdToken)
+        // No cached token + no pending creds — caller (bootstrap) treats this
+        // as "not signed in" and shows the sign-in UI.
+        throw NSError(domain: "Auth", code: -11, userInfo: [
+            NSLocalizedDescriptionKey: "Not signed in"
+        ])
     }
 
     func logout() async throws { TokenStore.clear() }
 
     func extractIdToken(from authResult: String) -> String { authResult }
 
-    /// Calls the public `auth:signIn` action with the Anonymous provider.
-    /// Uses an unauthenticated `ConvexClient` so we don't loop through our
-    /// own auth provider before we have a token.
-    private func signInAnonymous() async throws -> String {
+    /// Calls the public `auth:signIn` action (unauthenticated client) with
+    /// the Password provider params. Convex Auth handles hashing/verification.
+    private func passwordSignIn(email: String, password: String, flow: Flow) async throws -> String {
         let unauthClient = ConvexClient(deploymentUrl: deploymentURL)
+        let params: [String: ConvexEncodable?] = [
+            "email": email,
+            "password": password,
+            "flow": flow.rawValue,
+        ]
         let args: [String: ConvexEncodable?] = [
-            "provider": "anonymous",
-            "params": [String: ConvexEncodable?]()
+            "provider": "password",
+            "params": params,
         ]
         let result: SignInResult = try await unauthClient.action("auth:signIn", with: args)
         guard let token = result.tokens?.token else {
             throw NSError(domain: "Auth", code: -1, userInfo: [
-                NSLocalizedDescriptionKey: "auth:signIn returned no token"
+                NSLocalizedDescriptionKey: "Sign-in returned no token"
             ])
         }
         return token
@@ -55,8 +73,6 @@ final class AnonymousAuthProvider: AuthProvider {
 
     private struct SignInResult: Decodable {
         let tokens: Tokens?
-        let started: Bool?
-        let redirect: String?
         struct Tokens: Decodable {
             let token: String
             let refreshToken: String?

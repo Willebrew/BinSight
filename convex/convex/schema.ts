@@ -60,7 +60,19 @@ export default defineSchema({
     createdAt: v.number(),
   })
     .index("by_userId", ["userId"])
+    .index("by_email", ["email"])
     .index("by_appleSub", ["appleSub"]),
+
+  friendships: defineTable({
+    aUserId: v.id("users"),
+    bUserId: v.id("users"),
+    status: v.union(v.literal("pending"), v.literal("accepted")),
+    requestedBy: v.id("users"),
+    createdAt: v.number(),
+  })
+    .index("by_pair", ["aUserId", "bUserId"])
+    .index("by_aUserId", ["aUserId"])
+    .index("by_bUserId", ["bUserId"]),
 
   localRulesCache: defineTable({
     geohash5: v.string(),

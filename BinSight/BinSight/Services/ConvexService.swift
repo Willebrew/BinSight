@@ -2,8 +2,8 @@ import Foundation
 import Combine
 import ConvexMobile
 
-/// Authenticated Convex client. Reads a JWT from Keychain on startup; if there
-/// isn't one, the AuthProvider mints an anonymous account on first call.
+/// Authenticated Convex client. Reads a JWT from Keychain on startup; the user
+/// must sign in with email + password (Convex Auth Password provider).
 @MainActor
 final class ConvexService: ObservableObject {
     static let shared = ConvexService()
@@ -11,43 +11,77 @@ final class ConvexService: ObservableObject {
     static let deploymentUrl = "https://small-gerbil-660.convex.cloud"
 
     let client: ConvexClientWithAuth<String>
-    private let authProvider: AnonymousAuthProvider
+    private let authProvider: PasswordAuthProvider
 
-    @Published private(set) var isAuthenticated: Bool = false
+    enum AuthState {
+        case unknown        // app just booted, haven't checked Keychain yet
+        case signedOut      // confirmed no session
+        case signingIn
+        case signedIn
+    }
+
+    @Published private(set) var authState: AuthState = .unknown
     @Published private(set) var authError: String?
 
     private init() {
         let url = (Bundle.main.object(forInfoDictionaryKey: "CONVEX_URL") as? String)
             .flatMap { $0.isEmpty ? nil : $0 } ?? Self.deploymentUrl
-        let provider = AnonymousAuthProvider(deploymentURL: URL(string: url) ?? URL(string: Self.deploymentUrl)!)
+        let provider = PasswordAuthProvider(deploymentURL: URL(string: url) ?? URL(string: Self.deploymentUrl)!)
         self.authProvider = provider
         self.client = ConvexClientWithAuth(deploymentUrl: url, authProvider: provider)
     }
 
-    /// Call once on app launch. Loads cached token, signs in anonymously if none.
+    /// Call once on app launch. Restores cached session, or transitions to
+    /// `.signedOut` so the UI shows SignInView.
     func bootstrap() async {
         let result = await client.loginFromCache()
         switch result {
         case .success:
-            isAuthenticated = true
+            authState = .signedIn
+            authError = nil
+        case .failure:
+            authState = .signedOut
+        }
+    }
+
+    func signIn(email: String, password: String) async {
+        await runPasswordFlow(email: email, password: password, flow: .signIn)
+    }
+
+    func signUp(email: String, password: String) async {
+        await runPasswordFlow(email: email, password: password, flow: .signUp)
+        if authState == .signedIn {
+            // Stamp the email on the user's profile for friend lookup.
+            try? await setProfileEmail(email)
+        }
+    }
+
+    private func runPasswordFlow(email: String, password: String, flow: PasswordAuthProvider.Flow) async {
+        authState = .signingIn
+        authError = nil
+        authProvider.pendingCredentials = (email, password, flow)
+        let result = await client.login()
+        switch result {
+        case .success:
+            authState = .signedIn
             authError = nil
         case .failure(let err):
-            authError = err.localizedDescription
-            // Try a fresh anonymous sign-in (no cached token case).
-            let retry = await client.login()
-            switch retry {
-            case .success:
-                isAuthenticated = true
-                authError = nil
-            case .failure(let e):
-                authError = e.localizedDescription
-            }
+            authState = .signedOut
+            authError = friendlyError(err)
         }
     }
 
     func signOut() async {
         await client.logout()
-        isAuthenticated = false
+        authState = .signedOut
+    }
+
+    private func friendlyError(_ err: Error) -> String {
+        let msg = err.localizedDescription
+        if msg.contains("InvalidAccountId") { return "No account found for that email." }
+        if msg.contains("InvalidSecret") || msg.contains("Invalid password") { return "Wrong password." }
+        if msg.contains("AccountAlreadyExists") { return "An account already exists with that email." }
+        return msg
     }
 
     // MARK: - Files
@@ -143,15 +177,30 @@ final class ConvexService: ObservableObject {
         try await client.mutation("profiles:setDisplayName", with: args)
     }
 
-    struct AppleVerifyResult: Decodable {
-        let sub: String
-        let email: String?
-        let fullName: String?
+    func setProfileEmail(_ email: String) async throws {
+        let args: [String: ConvexEncodable?] = ["email": email]
+        try await client.mutation("profiles:setEmail", with: args)
     }
 
-    func verifyAppleIdentity(identityToken: String, fullName: String?) async throws -> AppleVerifyResult {
-        var args: [String: ConvexEncodable?] = ["identityToken": identityToken]
-        if let fullName { args["fullName"] = fullName }
-        return try await client.action("appleAuth:verifyAppleToken", with: args)
+    // MARK: - Friends
+
+    func subscribeFriends() -> AnyPublisher<FriendsDoc, ClientError> {
+        client.subscribe(to: "friends:list", yielding: FriendsDoc.self)
+            .eraseToAnyPublisher()
+    }
+
+    func requestFriendByEmail(_ email: String) async throws -> FriendRequestResult {
+        let args: [String: ConvexEncodable?] = ["email": email]
+        return try await client.mutation("friends:requestByEmail", with: args)
+    }
+
+    func respondFriendRequest(friendshipId: String, accept: Bool) async throws {
+        let args: [String: ConvexEncodable?] = ["friendshipId": friendshipId, "accept": accept]
+        try await client.mutation("friends:respond", with: args)
+    }
+
+    func removeFriend(friendshipId: String) async throws {
+        let args: [String: ConvexEncodable?] = ["friendshipId": friendshipId]
+        try await client.mutation("friends:remove", with: args)
     }
 }

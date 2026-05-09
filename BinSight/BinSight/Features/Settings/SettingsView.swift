@@ -16,6 +16,7 @@ struct SettingsView: View {
                     accountSection
                     nameSection
                     backendSection
+                    signOutButton
                 }
                 .padding(20)
             }
@@ -60,10 +61,10 @@ struct SettingsView: View {
             }
 
             HStack(spacing: 8) {
-                Image(systemName: convex.isAuthenticated
+                Image(systemName: (convex.authState == .signedIn)
                       ? "person.crop.circle.fill"
                       : "person.crop.circle.badge.questionmark")
-                    .foregroundStyle(convex.isAuthenticated
+                    .foregroundStyle((convex.authState == .signedIn)
                                      ? BinSightTokens.Color.accent
                                      : BinSightTokens.Color.hazard)
                 VStack(alignment: .leading) {
@@ -72,7 +73,7 @@ struct SettingsView: View {
                     if let email = profile?.email {
                         Text(email).font(.caption).foregroundStyle(.secondary)
                     } else {
-                        Text(convex.isAuthenticated ? "Signed in" : "Not signed in")
+                        Text((convex.authState == .signedIn) ? "Signed in" : "Not signed in")
                             .font(.caption).foregroundStyle(.secondary)
                     }
                 }
@@ -131,6 +132,18 @@ struct SettingsView: View {
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
         .glassSurface(RoundedRectangle(cornerRadius: 16, style: .continuous), variant: .regular)
+    }
+
+    private var signOutButton: some View {
+        Button(role: .destructive) {
+            Task { await convex.signOut() }
+        } label: {
+            Text("Sign out")
+                .font(.subheadline.weight(.semibold))
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 12)
+        }
+        .glassSurface(RoundedRectangle(cornerRadius: 14, style: .continuous), variant: .regular)
     }
 
     private func saveName() {
