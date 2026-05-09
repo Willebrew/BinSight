@@ -64,7 +64,7 @@ struct SettingsView: View {
     private var aboutSection: some View {
         VStack(alignment: .leading, spacing: 6) {
             DuoSectionHeader(title: "About", systemImage: "leaf.fill")
-            Text("Snap a photo of any waste item and BinSight tells you exactly where it goes — recycle, compost, trash, or hazardous.")
+            Text("Snap a photo of any waste item and BinSight tells you exactly where it goes - recycle, compost, trash, or hazardous.")
                 .font(.system(.callout, design: .rounded).weight(.semibold)).foregroundStyle(BinSightTokens.Color.softInk)
             Text("v0.3 - Convex Auth + Liquid Glass")
                 .font(.caption2.monospaced().weight(.semibold)).foregroundStyle(BinSightTokens.Color.softInk)

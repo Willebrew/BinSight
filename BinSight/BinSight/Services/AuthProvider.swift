@@ -9,7 +9,7 @@ import Security
 /// The Convex Swift SDK calls `loginFromCache` whenever it needs a fresh
 /// token (notably when the WebSocket gets a 401 from an expired JWT). We
 /// use that hook to swap our refreshToken for a new pair of tokens via the
-/// Convex Auth `auth:signIn` action — without a working refresh path, the
+/// Convex Auth `auth:signIn` action - without a working refresh path, the
 /// WebSocket wedges silently after token expiry.
 final class PasswordAuthProvider: AuthProvider {
     typealias T = String  // the JWT (id token)
@@ -41,7 +41,7 @@ final class PasswordAuthProvider: AuthProvider {
 
     /// Called by the SDK on app boot AND on token expiry. We try to refresh
     /// first; if that fails (no refresh token, or server rejects), fall back
-    /// to whatever JWT is in Keychain — but if we have nothing at all, throw
+    /// to whatever JWT is in Keychain - but if we have nothing at all, throw
     /// so the UI shows the sign-in screen.
     func loginFromCache(onIdToken: @Sendable @escaping (String?) -> Void) async throws -> String {
         let cached = TokenStore.read()

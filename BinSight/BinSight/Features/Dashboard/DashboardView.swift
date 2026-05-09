@@ -219,7 +219,7 @@ struct DashboardView: View {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("\(pending) item\(pending == 1 ? "" : "s") to review")
                             .font(.subheadline.weight(.semibold))
-                        Text("Swipe to confirm or ignore — only confirmed items count.")
+                        Text("Swipe to confirm or ignore - only confirmed items count.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
@@ -257,7 +257,7 @@ struct DashboardView: View {
             Text("Your first scan is waiting")
                 .font(.system(.title2, design: .rounded).weight(.heavy))
                 .foregroundStyle(BinSightTokens.Color.ink)
-            Text("Tap the camera button below and snap any waste item — BinSight will tell you exactly how to dispose of it.")
+            Text("Tap the camera button below and snap any waste item - BinSight will tell you exactly how to dispose of it.")
                 .font(.system(.callout, design: .rounded).weight(.semibold))
                 .foregroundStyle(BinSightTokens.Color.softInk)
                 .multilineTextAlignment(.center)
@@ -286,21 +286,21 @@ struct DashboardView: View {
         let kg = metrics?.totalCo2Kg ?? 0
         let miles = kg / 0.404                         // 0.404 kg CO2e / mile, EPA avg passenger vehicle
         let smartphones = kg / 0.0084                  // ~8.4 g per full charge, EPA
-        let treeMonths = kg / 9.5                      // urban tree sequestration ≈ 22 kg/yr ≈ 1.83 kg/mo (we use 9.5 for the dramatic round number — adjust)
+        let treeMonths = kg / 9.5                      // urban tree sequestration ≈ 22 kg/yr ≈ 1.83 kg/mo (we use 9.5 for the dramatic round number - adjust)
         let bagsAvoided = kg / 0.06                    // ~60 g CO2e per single-use plastic bag
         return [
             Equiv(icon: "car.fill",
                   label: String(format: "%.1f miles not driven", miles),
-                  detail: "EPA Greenhouse Gas Equivalencies — passenger vehicle avg."),
+                  detail: "EPA Greenhouse Gas Equivalencies - passenger vehicle avg."),
             Equiv(icon: "iphone",
                   label: String(format: "%.0f phone charges", smartphones),
-                  detail: "EPA — avg smartphone full-charge emissions."),
+                  detail: "EPA - avg smartphone full-charge emissions."),
             Equiv(icon: "tree.fill",
                   label: String(format: "%.1f tree-months of CO₂", treeMonths),
-                  detail: "Urban tree sequestration — USDA Forest Service."),
+                  detail: "Urban tree sequestration - USDA Forest Service."),
             Equiv(icon: "bag.fill",
                   label: String(format: "%.0f single-use bags", bagsAvoided),
-                  detail: "Avg ~60 g CO₂e per bag — ETH Zurich LCA."),
+                  detail: "Avg ~60 g CO₂e per bag - ETH Zurich LCA."),
         ]
     }
 
@@ -539,7 +539,7 @@ struct DashboardView: View {
             VStack(alignment: .leading, spacing: 10) {
                 Text("Where your impact comes from")
                     .font(.headline)
-                Text("By kg CO₂e avoided — not by item count. Aluminum punches above its weight.")
+                Text("By kg CO₂e avoided - not by item count. Aluminum punches above its weight.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 if total > 0 {
@@ -657,7 +657,7 @@ struct DashboardView: View {
                         Text(f.otherDisplayName ?? f.otherEmail ?? "Friend")
                             .font(.subheadline.weight(.semibold))
                         Spacer()
-                        // Friend totals would need a backend query — for now,
+                        // Friend totals would need a backend query - for now,
                         // we link straight into the Friends tab where the
                         // detailed leaderboard already lives.
                         Image(systemName: "chevron.right")
@@ -843,7 +843,7 @@ private struct RecentDecisionRow: View {
 
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 6) {
-                    Text(row.items.first?.label.capitalized ?? "—")
+                    Text(row.items.first?.label.capitalized ?? "-")
                         .font(.subheadline.weight(.semibold))
                         .lineLimit(1)
                     if let item = row.items.first {

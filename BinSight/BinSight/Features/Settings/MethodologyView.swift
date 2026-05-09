@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// Static page explaining how BinSight measures impact. Linked from the
-/// Dashboard footer and the Settings tab. Every claim is sourced —
+/// Dashboard footer and the Settings tab. Every claim is sourced -
 /// "transparency" is a feature, not a footnote.
 struct MethodologyView: View {
     var body: some View {
@@ -11,7 +11,7 @@ struct MethodologyView: View {
                 section(
                     title: "Where the CO₂ numbers come from",
                     body: """
-                    Every item you confirm is matched to an avoided-emissions factor from the U.S. EPA's WARM v16 model — the same dataset used by federal and municipal sustainability programs. We multiply the factor by the item's mass to get a per-item kg of CO₂e *avoided* compared to landfilling.
+                    Every item you confirm is matched to an avoided-emissions factor from the U.S. EPA's WARM v16 model - the same dataset used by federal and municipal sustainability programs. We multiply the factor by the item's mass to get a per-item kg of CO₂e *avoided* compared to landfilling.
                     """,
                     link: ("EPA WARM →", "https://www.epa.gov/warm")
                 )
@@ -30,13 +30,13 @@ struct MethodologyView: View {
                 section(
                     title: "Where decisions and sources come from",
                     body: """
-                    Classifications come from Perplexity sonar-pro, which has live web search built in. We require the model to attach at least one source to every item, and we rank sources by tier — official (.gov / EPA / municipal) outranks authoritative (peer-reviewed, major news), which outranks community (forums, blogs). When your city's domain shows up, it's flagged as "local."
+                    Classifications come from Perplexity sonar-pro, which has live web search built in. We require the model to attach at least one source to every item, and we rank sources by tier - official (.gov / EPA / municipal) outranks authoritative (peer-reviewed, major news), which outranks community (forums, blogs). When your city's domain shows up, it's flagged as "local."
                     """
                 )
                 section(
                     title: "Why review-to-confirm matters",
                     body: """
-                    Only items you've personally confirmed (swiped right) count toward your CO₂ totals. Pending items — and items you've ignored (swiped left) — don't accrue stats. You are the ground truth, and the dashboard reflects what you've actually validated.
+                    Only items you've personally confirmed (swiped right) count toward your CO₂ totals. Pending items - and items you've ignored (swiped left) - don't accrue stats. You are the ground truth, and the dashboard reflects what you've actually validated.
                     """
                 )
                 section(
@@ -49,7 +49,7 @@ struct MethodologyView: View {
                 section(
                     title: "What we don't (yet) account for",
                     body: """
-                    • Regional grid mix differences (an aluminum can recycled near hydropower offsets more than one near coal). \n• Contamination penalties — a soiled container can downgrade the whole bale, which we currently model only via the "trash" decision. \n• Transportation emissions for take-back drop-offs. \nThese are on the roadmap; until then, treat the headline number as a rigorously-bounded estimate, not a precise measurement.
+                    • Regional grid mix differences (an aluminum can recycled near hydropower offsets more than one near coal). \n• Contamination penalties - a soiled container can downgrade the whole bale, which we currently model only via the "trash" decision. \n• Transportation emissions for take-back drop-offs. \nThese are on the roadmap; until then, treat the headline number as a rigorously-bounded estimate, not a precise measurement.
                     """
                 )
             }
@@ -66,7 +66,7 @@ struct MethodologyView: View {
             Text("How BinSight measures impact")
                 .font(.system(.title2, design: .rounded).weight(.heavy))
                 .foregroundStyle(BinSightTokens.Color.ink)
-            Text("Every number you see — from individual scan CO₂ to the lifetime total on your Dashboard — has a citable source and an honest range.")
+            Text("Every number you see - from individual scan CO₂ to the lifetime total on your Dashboard - has a citable source and an honest range.")
                 .font(.system(.callout, design: .rounded).weight(.semibold))
                 .foregroundStyle(BinSightTokens.Color.softInk)
         }

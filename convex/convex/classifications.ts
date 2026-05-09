@@ -115,7 +115,7 @@ export const remove = mutation({
 });
 
 /**
- * Triage one detected item — swipe right = `confirmed` (counts toward
+ * Triage one detected item - swipe right = `confirmed` (counts toward
  * metrics), swipe left = `rejected` (does not count). `pending` items are
  * intentionally excluded from CO2 / scan stats so the dashboard reflects
  * only what the user has personally validated.
@@ -142,7 +142,7 @@ export const reviewItem = mutation({
 });
 
 /**
- * Bulk triage helper — used by "Confirm all" / "Reject all" actions.
+ * Bulk triage helper - used by "Confirm all" / "Reject all" actions.
  */
 export const reviewAll = mutation({
   args: {

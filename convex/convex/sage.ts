@@ -21,7 +21,7 @@ export type RawSource = {
   title?: string;
   publisher?: string;
   snippet?: string;
-  /** "material" | "rule" | "both" — what this source supports. */
+  /** "material" | "rule" | "both" - what this source supports. */
   kind?: string;
   /** indices into the items array that this source supports */
   supportsItemIndices?: number[];
@@ -214,6 +214,67 @@ export async function classifyImage(
 }
 
 /**
+ * Look up a real-world mass estimate for an item via Perplexity Search.
+ * Returns grams + a citing source so we don't have to take the vision
+ * model's mass guess on faith.
+ *
+ * Best-effort. Failures return undefined; caller falls back to the model
+ * estimate or the material default. Designed to run in parallel for many
+ * items via Promise.all.
+ */
+export async function lookupItemMass(
+  item: RawItem,
+): Promise<{ massG: number; source: RawSource } | undefined> {
+  const apiKey = process.env.PERPLEXITY_API_KEY;
+  if (!apiKey) return undefined;
+  const query = `typical empty mass in grams of ${item.label} (${item.material})`;
+  try {
+    const res = await fetch(SEARCH_URL, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ query, max_results: 5 }),
+    });
+    if (!res.ok) return undefined;
+    const json: any = await res.json();
+    const results: any[] = Array.isArray(json?.results) ? json.results : [];
+    for (const r of results) {
+      const blob = `${r?.title ?? ""} ${r?.snippet ?? ""}`;
+      const m =
+        blob.match(/(\d{1,4}(?:\.\d+)?)\s*(?:g|grams?|gm)\b/i) ||
+        blob.match(/(\d{1,2}(?:\.\d+)?)\s*(?:oz|ounces?)\b/i);
+      if (!m) continue;
+      let grams = parseFloat(m[1]);
+      if (m[0].toLowerCase().includes("oz")) grams *= 28.3495;
+      // Reject implausible values: < 0.5g (specks) or > 50kg (vehicles)
+      if (!Number.isFinite(grams) || grams < 0.5 || grams > 50_000) continue;
+      const url: string | undefined = r?.url;
+      if (!url) continue;
+      return {
+        massG: Number(grams.toFixed(1)),
+        source: {
+          url,
+          title: r?.title,
+          publisher: r?.publisher ?? hostFor(url),
+          snippet: r?.snippet ?? "",
+          kind: "material",
+        },
+      };
+    }
+    return undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function hostFor(url: string): string {
+  try {
+    return new URL(url).hostname.replace(/^www\./, "");
+  } catch {
+    return url;
+  }
+}
+
+/**
  * Lightweight verification: ask the Search API to corroborate the top item's
  * decision. Best-effort; failures are non-fatal upstream.
  */
@@ -327,7 +388,7 @@ export async function generateWeeklyInsight(input: {
       sources: Array.isArray(parsed?.sources) ? parsed.sources : [],
     };
   } catch {
-    return { headline: "Keep scanning!", body: "We couldn't fetch a fresh tip this week — your impact still counts.", sources: [] };
+    return { headline: "Keep scanning!", body: "We couldn't fetch a fresh tip this week - your impact still counts.", sources: [] };
   }
 }
 

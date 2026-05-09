@@ -3,10 +3,10 @@
  *
  * Numbers are the *avoided* GHG emissions when a unit of material is
  * recycled or composted instead of landfilled, expressed in
- * **kg CO₂e per kg of material** (negative numbers in the EPA tables —
+ * **kg CO₂e per kg of material** (negative numbers in the EPA tables -
  * we store positive "savings" here).
  *
- * Source: U.S. EPA WARM (Waste Reduction Model) v16 — managed-by-pathway
+ * Source: U.S. EPA WARM (Waste Reduction Model) v16 - managed-by-pathway
  * emission factors, national-average grid, transportation included.
  *   https://www.epa.gov/warm
  *
@@ -47,39 +47,39 @@ function factor(midKgPerKg: number, defaultMassKg: number, source: string): Impa
 }
 
 export const RECYCLE_FACTORS: Record<string, ImpactFactor> = {
-  // Plastics — recycled vs. landfilled, national grid
-  pet: factor(1.07, 0.025, "EPA WARM v16 — PET, recycled vs. landfilled"),
-  hdpe: factor(0.86, 0.05, "EPA WARM v16 — HDPE, recycled vs. landfilled"),
-  ldpe: factor(0.69, 0.01, "EPA WARM v16 — LDPE film, recycled vs. landfilled"),
-  pp: factor(1.02, 0.03, "EPA WARM v16 — PP, recycled vs. landfilled"),
-  ps: factor(2.43, 0.02, "EPA WARM v16 — PS, recycled vs. landfilled"),
-  plastic: factor(0.95, 0.03, "EPA WARM v16 — mixed plastics, recycled vs. landfilled"),
+  // Plastics - recycled vs. landfilled, national grid
+  pet: factor(1.07, 0.025, "EPA WARM v16 - PET, recycled vs. landfilled"),
+  hdpe: factor(0.86, 0.05, "EPA WARM v16 - HDPE, recycled vs. landfilled"),
+  ldpe: factor(0.69, 0.01, "EPA WARM v16 - LDPE film, recycled vs. landfilled"),
+  pp: factor(1.02, 0.03, "EPA WARM v16 - PP, recycled vs. landfilled"),
+  ps: factor(2.43, 0.02, "EPA WARM v16 - PS, recycled vs. landfilled"),
+  plastic: factor(0.95, 0.03, "EPA WARM v16 - mixed plastics, recycled vs. landfilled"),
 
   // Metals
-  aluminum: factor(9.13, 0.015, "EPA WARM v16 — aluminum cans, recycled vs. landfilled"),
-  steel: factor(1.79, 0.15, "EPA WARM v16 — steel cans, recycled vs. landfilled"),
-  tin: factor(1.79, 0.05, "EPA WARM v16 — steel/tin cans, recycled vs. landfilled"),
+  aluminum: factor(9.13, 0.015, "EPA WARM v16 - aluminum cans, recycled vs. landfilled"),
+  steel: factor(1.79, 0.15, "EPA WARM v16 - steel cans, recycled vs. landfilled"),
+  tin: factor(1.79, 0.05, "EPA WARM v16 - steel/tin cans, recycled vs. landfilled"),
 
   // Paper & fiber
-  paper: factor(3.15, 0.01, "EPA WARM v16 — mixed paper, recycled vs. landfilled"),
-  cardboard: factor(3.14, 0.05, "EPA WARM v16 — corrugated cardboard, recycled vs. landfilled"),
-  newspaper: factor(2.69, 0.05, "EPA WARM v16 — newsprint, recycled vs. landfilled"),
+  paper: factor(3.15, 0.01, "EPA WARM v16 - mixed paper, recycled vs. landfilled"),
+  cardboard: factor(3.14, 0.05, "EPA WARM v16 - corrugated cardboard, recycled vs. landfilled"),
+  newspaper: factor(2.69, 0.05, "EPA WARM v16 - newsprint, recycled vs. landfilled"),
 
   // Glass
-  glass: factor(0.28, 0.4, "EPA WARM v16 — glass, recycled vs. landfilled"),
+  glass: factor(0.28, 0.4, "EPA WARM v16 - glass, recycled vs. landfilled"),
 
   // Catch-alls
-  mixed: factor(0.5, 0.05, "BinSight estimate — mixed/unsorted recyclable"),
-  unknown: factor(0.0, 0.05, "Unknown material — no impact credited"),
+  mixed: factor(0.5, 0.05, "BinSight estimate - mixed/unsorted recyclable"),
+  unknown: factor(0.0, 0.05, "Unknown material - no impact credited"),
 };
 
 export const COMPOST_FACTORS: Record<string, ImpactFactor> = {
-  organic: factor(0.21, 0.1, "EPA WARM v16 — food waste, composted vs. landfilled"),
-  food: factor(0.21, 0.1, "EPA WARM v16 — food waste, composted vs. landfilled"),
-  yard: factor(0.18, 0.5, "EPA WARM v16 — yard trimmings, composted vs. landfilled"),
-  paper: factor(0.16, 0.01, "EPA WARM v16 — paper, composted vs. landfilled"),
-  cardboard: factor(0.16, 0.05, "EPA WARM v16 — cardboard, composted vs. landfilled"),
-  unknown: factor(0.15, 0.1, "BinSight estimate — generic compostable"),
+  organic: factor(0.21, 0.1, "EPA WARM v16 - food waste, composted vs. landfilled"),
+  food: factor(0.21, 0.1, "EPA WARM v16 - food waste, composted vs. landfilled"),
+  yard: factor(0.18, 0.5, "EPA WARM v16 - yard trimmings, composted vs. landfilled"),
+  paper: factor(0.16, 0.01, "EPA WARM v16 - paper, composted vs. landfilled"),
+  cardboard: factor(0.16, 0.05, "EPA WARM v16 - cardboard, composted vs. landfilled"),
+  unknown: factor(0.15, 0.1, "BinSight estimate - generic compostable"),
 };
 
 export type Co2Estimate = {

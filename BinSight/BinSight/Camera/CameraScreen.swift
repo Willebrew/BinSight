@@ -61,7 +61,7 @@ struct CameraScreen: View {
         .onDisappear { camera.stop(); location.stop() }
         .sheet(item: $flow.activeId) { id in
             ResultCardView(classificationId: id.value)
-                .presentationDetents([.medium, .large])
+                .presentationDetents([.large])
                 .presentationDragIndicator(.visible)
         }
         .onReceive(Timer.publish(every: 1.4, on: .main, in: .common).autoconnect()) { _ in
@@ -170,7 +170,7 @@ struct CameraScreen: View {
 
     private func capture() async {
         guard !flow.isWorking else {
-            visibleError = "Already classifying — hang tight."
+            visibleError = "Already classifying - hang tight."
             return
         }
         guard camera.isRunning else {

@@ -141,7 +141,7 @@ final class ConvexService: ObservableObject {
         try await client.mutation("classifications:remove", with: args)
     }
 
-    /// Triage one detected item — `state` ∈ "confirmed" | "rejected" | "pending".
+    /// Triage one detected item - `state` ∈ "confirmed" | "rejected" | "pending".
     func reviewItem(id: String, itemIndex: Int, state: String) async throws {
         let args: [String: ConvexEncodable?] = [
             "id": id,

@@ -4,7 +4,7 @@ import CoreLocation
 import Combine
 
 /// Region-based impact view. Shows an Apple Map with annotations sized by
-/// activity, plus a leaderboard list — switchable between country, state,
+/// activity, plus a leaderboard list - switchable between country, state,
 /// and city aggregations.
 struct ImpactMapView: View {
     @State private var rows: [RegionCellDoc] = []

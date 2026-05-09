@@ -51,7 +51,7 @@ export const sourceValidator = v.object({
  * One detected waste item.
  *
  * `co2Kg` is the point-estimate (mid-range) for back-compat & quick reads.
- * `co2KgLow`/`co2KgHigh` carry the honest uncertainty band — we always
+ * `co2KgLow`/`co2KgHigh` carry the honest uncertainty band - we always
  * surface a range in the UI rather than pretending to be precise.
  *
  * `estimatedMassG` is the model's per-item mass guess (grams). When the
@@ -67,7 +67,7 @@ export const itemValidator = v.object({
 
   // Mass + impact
   estimatedMassG: v.number(),
-  massSource: v.union(v.literal("model"), v.literal("default")),
+  massSource: v.union(v.literal("model"), v.literal("default"), v.literal("verified")),
   co2Kg: v.number(),
   co2KgLow: v.number(),
   co2KgHigh: v.number(),

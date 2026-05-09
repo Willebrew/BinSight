@@ -146,14 +146,14 @@ Take a picture of trash → AI tells you whether to recycle or throw it away →
 **First screen users see when opening the app.**
 
 **Layout (Mobile Portrait):**
-- **Top Section**: Header text — "Scan your waste"
+- **Top Section**: Header text - "Scan your waste"
 - **Center Area**: Large camera preview/viewfinder
   - Placeholder text: "picture"
   - Central camera icon/placeholder for the live camera feed
 - **Bottom Navigation Bar** (3 elements):
-  - **Dashboard** (left) — chart/graph icon, navigates to metrics view
-  - **Central Circular Shutter Button** — main capture button for taking photos
-  - **Settings** (right) — gear icon, navigates to app settings
+  - **Dashboard** (left) - chart/graph icon, navigates to metrics view
+  - **Central Circular Shutter Button** - main capture button for taking photos
+  - **Settings** (right) - gear icon, navigates to app settings
 
 **User Flow:**
 1. User opens app → lands directly on camera page

@@ -34,7 +34,7 @@ final class CaptureFlow: ObservableObject {
             throw NSError(domain: "BinSight", code: 401, userInfo: [NSLocalizedDescriptionKey: msg])
         }
 
-        captureLog.info("classify start: jpeg=\(jpeg.count) bytes, lat=\(lat ?? .nan), lng=\(lng ?? .nan), city=\(city ?? "—")")
+        captureLog.info("classify start: jpeg=\(jpeg.count) bytes, lat=\(lat ?? .nan), lng=\(lng ?? .nan), city=\(city ?? "-")")
 
         let storageId: String
         do {

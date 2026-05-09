@@ -3,7 +3,7 @@
 import { v } from "convex/values";
 import { action } from "./_generated/server";
 import { internal, api } from "./_generated/api";
-import { classifyImage, verifyTopItem, type RawSource } from "./sage";
+import { classifyImage, verifyTopItem, lookupItemMass, type RawSource } from "./sage";
 import { estimateCo2 } from "./impactTable";
 
 type StoredSource = {
@@ -23,7 +23,7 @@ type StoredItem = {
   decision: "recycle" | "trash" | "compost" | "hazard";
   confidence: number;
   estimatedMassG: number;
-  massSource: "model" | "default";
+  massSource: "model" | "default" | "verified";
   co2Kg: number;
   co2KgLow: number;
   co2KgHigh: number;
@@ -121,7 +121,7 @@ export const run = action({
         item.sourceIndices = remapped;
       });
 
-      // 3. Stream the classification result to the client immediately —
+      // 3. Stream the classification result to the client immediately -
       //    the UI is subscribed to this row, so writing now (before the
       //    verification step) lets users see items, sources, and rules
       //    a few seconds earlier than waiting for verify to finish.
@@ -135,22 +135,78 @@ export const run = action({
         verified: false,
       });
 
-      // 4. Run verifications for the top items in parallel — independent
-      //    Search-API calls don't block each other, and the result is just
-      //    a boolean badge so we patch it after the items have already
-      //    streamed to the UI.
+      // 4. In parallel: verify the decisions AND ground each item's mass
+      //    in a real product-spec source. The mass lookup re-anchors the
+      //    CO2 number so we don't ship a hallucinated weight; the
+      //    verification call sets the verified badge. Both run
+      //    concurrently so latency is max(verify, mass), not sum.
       if (items.length > 0) {
         const topN = Math.min(items.length, 3);
-        const checks = await Promise.all(
-          agent.items.slice(0, topN).map((it) =>
-            verifyTopItem(it).catch(() => false),
-          ),
-        );
-        const verified = checks.some(Boolean);
-        await ctx.runMutation(internal.classifications.setVerified, {
-          id,
-          verified,
+        const slice = agent.items.slice(0, topN);
+        const [verifyResults, massResults] = await Promise.all([
+          Promise.all(slice.map((it) => verifyTopItem(it).catch(() => false))),
+          Promise.all(slice.map((it) => lookupItemMass(it).catch(() => undefined))),
+        ]);
+        const verified = verifyResults.some(Boolean);
+
+        // Apply mass-grounding results: re-run estimateCo2 with the
+        // verified mass, attach the source as kind="material", link from
+        // the item via sourceIndices.
+        let updated = false;
+        massResults.forEach((mass, i) => {
+          if (!mass) return;
+          updated = true;
+          const item = items[i];
+          const co2 = estimateCo2(item.material, item.decision, mass.massG);
+          item.estimatedMassG = mass.massG;
+          item.massSource = "verified";
+          item.co2Kg = co2.co2Kg;
+          item.co2KgLow = co2.co2KgLow;
+          item.co2KgHigh = co2.co2KgHigh;
+          item.co2Method = `${co2.method} (mass via ${hostOf(mass.source.url)})`;
+          // Add the mass source to the ranked list (or merge if already there).
+          const existingIdx = ranked.findIndex((s) => s.url === mass.source.url);
+          let newIdx: number;
+          if (existingIdx >= 0) {
+            newIdx = existingIdx;
+            if (ranked[newIdx].kind === "rule") ranked[newIdx].kind = "both";
+          } else {
+            newIdx = ranked.length;
+            ranked.push({
+              url: mass.source.url,
+              title: mass.source.title || hostOf(mass.source.url),
+              publisher: mass.source.publisher || hostOf(mass.source.url),
+              snippet: mass.source.snippet || "",
+              tier: tierFor(mass.source.url),
+              kind: "material",
+              isLocal: isLocalSource(mass.source.url, row.city ?? undefined, row.state ?? undefined),
+              supportsItemIndices: [i],
+            });
+          }
+          if (!ranked[newIdx].supportsItemIndices.includes(i)) {
+            ranked[newIdx].supportsItemIndices.push(i);
+          }
+          if (!item.sourceIndices.includes(newIdx)) {
+            item.sourceIndices.push(newIdx);
+          }
         });
+
+        if (updated) {
+          await ctx.runMutation(internal.classifications.writeResult, {
+            id,
+            items,
+            sources: ranked,
+            localRules: agent.localRules,
+            citations: agent.citations,
+            model: agent.model,
+            verified,
+          });
+        } else {
+          await ctx.runMutation(internal.classifications.setVerified, {
+            id,
+            verified,
+          });
+        }
       }
     } catch (e: any) {
       await ctx.runMutation(internal.classifications.writeError, {

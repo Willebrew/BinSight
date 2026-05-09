@@ -3,7 +3,7 @@ import { query } from "./_generated/server";
 
 /**
  * Anonymized aggregation of done classifications by administrative region.
- * Returns counts only — never per-user data, never exact coordinates.
+ * Returns counts only - never per-user data, never exact coordinates.
  */
 export const aggregate = query({
   args: { level: v.union(v.literal("country"), v.literal("state"), v.literal("city")) },

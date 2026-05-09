@@ -131,7 +131,7 @@ private struct HistoryRow: View {
 
             // Title + meta
             VStack(alignment: .leading, spacing: 4) {
-                Text(doc.items.first?.label.capitalized ?? (doc.status == "pending" ? "Classifying…" : "—"))
+                Text(doc.items.first?.label.capitalized ?? (doc.status == "pending" ? "Classifying…" : "-"))
                     .font(.system(.subheadline, design: .rounded).weight(.heavy))
                     .foregroundStyle(BinSightTokens.Color.ink)
                     .lineLimit(1)

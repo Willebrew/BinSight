@@ -287,7 +287,7 @@ struct ResultCardView: View {
 
     private func shareString(for d: ClassificationDoc) -> String {
         guard let item = d.items.first else { return "BinSight scan" }
-        return "BinSight identified a \(item.label) — \(item.decision.uppercased()) (\(Int(item.confidence * 100))% confidence)."
+        return "BinSight identified a \(item.label) - \(item.decision.uppercased()) (\(Int(item.confidence * 100))% confidence)."
     }
 
     private func subscribe() {
@@ -305,7 +305,7 @@ struct ResultCardView: View {
 // MARK: - Swipe-first triage screen
 //
 // Lives at the root of the navigation, NOT inside a ScrollView. This is
-// the key to the gesture working — SwiftUI's drag-gesture absorption from
+// the key to the gesture working - SwiftUI's drag-gesture absorption from
 // outer scroll views is the most common cause of "swipe doesn't work."
 
 private struct SwipeTriageScreen: View {
@@ -328,7 +328,7 @@ private struct SwipeTriageScreen: View {
                 .padding(.horizontal, 16)
                 .padding(.top, 4)
 
-            ZStack {
+            ZStack(alignment: .top) {
                 ForEach(visibleStack(items), id: \.offset) { entry in
                     let depth = entry.depth
                     let isTop = depth == 0
@@ -386,7 +386,8 @@ private struct SwipeTriageScreen: View {
                     finishedOverlay
                 }
             }
-            .frame(maxHeight: .infinity)
+            .padding(.top, 14)
+            .frame(maxHeight: .infinity, alignment: .top)
 
             actionRow(items: items)
                 .padding(.horizontal, 16)
@@ -627,21 +628,18 @@ private struct TriageCard: View {
                     .foregroundStyle(.primary.opacity(0.85))
                     .lineLimit(4)
 
-                if let topSource = sources.first {
-                    HStack(spacing: 6) {
-                        Image(systemName: tierIcon(topSource.tier))
-                            .imageScale(.small)
-                            .foregroundStyle(tierColor(topSource.tier))
-                        Text(topSource.publisher.isEmpty ? hostOf(topSource.url) : topSource.publisher)
-                            .font(.caption2.weight(.semibold))
-                            .lineLimit(1)
-                            .foregroundStyle(.secondary)
-                        if topSource.isLocal {
-                            Text("local")
-                                .font(.caption2.weight(.bold))
-                                .padding(.horizontal, 6).padding(.vertical, 1)
-                                .background(BinSightTokens.Color.accent.opacity(0.15), in: Capsule())
-                                .foregroundStyle(BinSightTokens.Color.accent)
+                if !sources.isEmpty {
+                    let materialSrc = sources.first(where: { ($0.kind ?? "") == "material" || ($0.kind ?? "") == "both" })
+                    let ruleSrc = sources.first(where: { ($0.kind ?? "") == "rule" || ($0.kind ?? "") == "both" })
+                        ?? sources.first(where: { $0.kind == nil })
+                    VStack(alignment: .leading, spacing: 4) {
+                        if let s = materialSrc {
+                            sourceBadge(label: "material", source: s, tint: BinSightTokens.Color.accent)
+                        }
+                        if let s = ruleSrc, s.url != materialSrc?.url {
+                            sourceBadge(label: s.isLocal ? "local rule" : "rule",
+                                        source: s,
+                                        tint: BinSightTokens.Color.recycle)
                         }
                     }
                 }
@@ -659,6 +657,20 @@ private struct TriageCard: View {
         )
         .shadow(color: .black.opacity(0.12), radius: 22, x: 0, y: 10)
         .clipShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
+    }
+
+    private func sourceBadge(label: String, source: SourceDoc, tint: Color) -> some View {
+        HStack(spacing: 6) {
+            Text(label.uppercased())
+                .font(.caption2.weight(.heavy))
+                .padding(.horizontal, 6).padding(.vertical, 2)
+                .background(tint.opacity(0.16), in: Capsule())
+                .foregroundStyle(tint)
+            Text(source.publisher.isEmpty ? hostOf(source.url) : source.publisher)
+                .font(.caption2.weight(.semibold))
+                .lineLimit(1)
+                .foregroundStyle(.secondary)
+        }
     }
 
     private var decisionColor: Color { decisionTint(item.decision) }
@@ -688,7 +700,7 @@ private struct CompactItemRow: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // Always-visible compact line — this is what the user sees by default.
+            // Always-visible compact line - this is what the user sees by default.
             Button {
                 withAnimation(.spring(response: 0.32, dampingFraction: 0.85)) {
                     expanded.toggle()
@@ -799,7 +811,7 @@ private struct Co2MathView: View {
 
             row("Material", value: item.material.capitalized)
             row("Mass", value: massString)
-            row("Method", value: item.co2Method.isEmpty ? "—" : item.co2Method)
+            row("Method", value: item.co2Method.isEmpty ? "-" : item.co2Method)
             row("Range", value: item.co2Kg == 0
                 ? "no credit applied"
                 : String(format: "%.3f – %.3f kg CO₂e", item.co2KgLow, item.co2KgHigh))

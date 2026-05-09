@@ -81,7 +81,7 @@ export const summary = query({
         if (isDiverted) byDay[dayKey].recycled += 1;
         else byDay[dayKey].trashed += 1;
 
-        // CO2 (legacy items may lack the low/high band — fall back to ±20%)
+        // CO2 (legacy items may lack the low/high band - fall back to ±20%)
         const lo = item.co2KgLow ?? item.co2Kg * 0.8;
         const hi = item.co2KgHigh ?? item.co2Kg * 1.2;
         totalCo2 += item.co2Kg;
