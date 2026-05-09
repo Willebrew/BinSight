@@ -2,18 +2,18 @@ import Foundation
 import ConvexMobile
 import Security
 
-/// AnonymousAuthProvider talks to `@convex-dev/auth`'s HTTP routes (deployed
-/// at `<deployment>.convex.site/api/auth/...`) to mint and store a session
-/// JWT. Each device gets a real Convex `users` row tied to that token.
+/// AnonymousAuthProvider mints a session JWT by calling the `auth:signIn`
+/// action exposed by `@convex-dev/auth`. Stores the JWT in Keychain so it
+/// survives app restarts. The user identity is durable; if the device
+/// reinstalls without keychain restoration we fall back to a fresh anonymous
+/// account, which is acceptable for v0.
 final class AnonymousAuthProvider: AuthProvider {
     typealias T = String  // the JWT
 
-    private let siteURL: URL
+    private let deploymentURL: String
 
     init(deploymentURL: URL) {
-        // .convex.cloud -> .convex.site
-        let host = (deploymentURL.host ?? "").replacingOccurrences(of: ".convex.cloud", with: ".convex.site")
-        self.siteURL = URL(string: "https://\(host)") ?? deploymentURL
+        self.deploymentURL = deploymentURL.absoluteString
     }
 
     func login(onIdToken: @Sendable @escaping (String?) -> Void) async throws -> String {
@@ -28,53 +28,39 @@ final class AnonymousAuthProvider: AuthProvider {
             onIdToken(cached)
             return cached
         }
-        // No cached token — sign in anonymously now.
-        let token = try await signInAnonymous()
-        TokenStore.write(token)
-        onIdToken(token)
+        return try await login(onIdToken: onIdToken)
+    }
+
+    func logout() async throws { TokenStore.clear() }
+
+    func extractIdToken(from authResult: String) -> String { authResult }
+
+    /// Calls the public `auth:signIn` action with the Anonymous provider.
+    /// Uses an unauthenticated `ConvexClient` so we don't loop through our
+    /// own auth provider before we have a token.
+    private func signInAnonymous() async throws -> String {
+        let unauthClient = ConvexClient(deploymentUrl: deploymentURL)
+        let args: [String: ConvexEncodable?] = [
+            "provider": "anonymous",
+            "params": [String: ConvexEncodable?]()
+        ]
+        let result: SignInResult = try await unauthClient.action("auth:signIn", with: args)
+        guard let token = result.tokens?.token else {
+            throw NSError(domain: "Auth", code: -1, userInfo: [
+                NSLocalizedDescriptionKey: "auth:signIn returned no token"
+            ])
+        }
         return token
     }
 
-    func logout() async throws {
-        TokenStore.clear()
-    }
-
-    func extractIdToken(from authResult: String) -> String {
-        authResult
-    }
-
-    private func signInAnonymous() async throws -> String {
-        let url = siteURL.appendingPathComponent("api/auth/signIn")
-        var req = URLRequest(url: url)
-        req.httpMethod = "POST"
-        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        req.timeoutInterval = 30
-        req.httpBody = try JSONSerialization.data(withJSONObject: [
-            "provider": "anonymous",
-            "params": [:]
-        ])
-        let (data, response) = try await URLSession.shared.data(for: req)
-        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
-            let body = String(data: data, encoding: .utf8) ?? ""
-            throw NSError(domain: "Auth", code: -1, userInfo: [
-                NSLocalizedDescriptionKey: "signIn failed (\((response as? HTTPURLResponse)?.statusCode ?? 0)): \(body.prefix(300))"
-            ])
+    private struct SignInResult: Decodable {
+        let tokens: Tokens?
+        let started: Bool?
+        let redirect: String?
+        struct Tokens: Decodable {
+            let token: String
+            let refreshToken: String?
         }
-        struct SignInResponse: Decodable {
-            let tokens: Tokens?
-            let token: String?
-            struct Tokens: Decodable { let token: String? }
-        }
-        let decoded = try JSONDecoder().decode(SignInResponse.self, from: data)
-        if let t = decoded.tokens?.token { return t }
-        if let t = decoded.token { return t }
-        // Convex auth may return slightly different shapes; fall back to raw string scan.
-        if let body = String(data: data, encoding: .utf8) {
-            throw NSError(domain: "Auth", code: -2, userInfo: [
-                NSLocalizedDescriptionKey: "signIn returned no token: \(body.prefix(200))"
-            ])
-        }
-        throw NSError(domain: "Auth", code: -3, userInfo: [NSLocalizedDescriptionKey: "Empty signIn response"])
     }
 }
 
