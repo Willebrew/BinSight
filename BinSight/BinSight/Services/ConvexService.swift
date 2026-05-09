@@ -81,7 +81,9 @@ final class ConvexService {
     }
 
     func subscribeHistory() -> AnyPublisher<[ClassificationDoc], ClientError> {
-        let args: [String: ConvexEncodable?] = ["clientId": clientId, "limit": 50]
+        // Server defaults limit to 50 when omitted. Don't pass it — Swift Ints
+        // encode as Convex int64 but the validator wants float64.
+        let args: [String: ConvexEncodable?] = ["clientId": clientId]
         return client.subscribe(to: "classifications:listForClient", with: args, yielding: [ClassificationDoc].self)
             .eraseToAnyPublisher()
     }
@@ -93,7 +95,9 @@ final class ConvexService {
     }
 
     func subscribeMap() -> AnyPublisher<[MapCellDoc], ClientError> {
-        let args: [String: ConvexEncodable?] = ["sinceMs": 0]
+        // Omit sinceMs to use the server default; Convex validator on `number`
+        // means float64 and Swift Ints would arrive as int64 and be rejected.
+        let args: [String: ConvexEncodable?] = [:]
         return client.subscribe(to: "map:aggregate", with: args, yielding: [MapCellDoc].self)
             .eraseToAnyPublisher()
     }
