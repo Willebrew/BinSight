@@ -1,10 +1,8 @@
 import SwiftUI
-import AuthenticationServices
 import Combine
 
 struct SettingsView: View {
     @EnvironmentObject private var convex: ConvexService
-    @StateObject private var apple = AppleSignInCoordinator()
     @State private var profile: ProfileDoc?
     @State private var subscription: AnyCancellable?
     @State private var nameDraft = ""
@@ -81,22 +79,9 @@ struct SettingsView: View {
                 Spacer()
             }
 
-            if profile?.isAppleLinked != true {
-                SignInWithAppleButton(.continue) { request in
-                    request.requestedScopes = [.fullName, .email]
-                } onCompletion: { result in
-                    Task { await apple.handle(result: result) }
-                }
-                .signInWithAppleButtonStyle(.whiteOutline)
-                .frame(height: 48)
-                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                if apple.status == .signingIn {
-                    HStack { ProgressView(); Text("Linking Apple ID…").font(.caption) }
-                }
-                if let err = apple.lastError {
-                    Text(err).font(.caption).foregroundStyle(.red)
-                }
-            }
+            // Sign In with Apple requires a paid Apple Developer account.
+            // Once you upgrade the team that signs this app, re-add the
+            // SIWA capability + bring back AppleSignIn.swift to enable it.
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
