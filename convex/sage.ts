@@ -1,11 +1,15 @@
-// SAGE-routed call into the Perplexity Agent API for waste classification.
-// Returns a typed structured object; web_search tool enabled so the model can
-// pull location-specific recycling rules.
+// Perplexity classifier for BinSight.
 //
-// Env: PERPLEXITY_API_KEY (set via `npx convex env set PERPLEXITY_API_KEY ...`)
-//      PERPLEXITY_MODEL    (optional override; default claude-opus-4-7)
+// Uses /chat/completions with sonar-pro: web search is built into the model,
+// citations are returned at the top level, and it accepts vision inputs in
+// OpenAI-style `image_url` format. The Agent API endpoint (/v1/agent) was
+// considered but rejects vision models — sonar via chat completions is the
+// supported path today (validated against /Users/.../product-jpeg-500x500.png).
+//
+// Env: PERPLEXITY_API_KEY  (set via `npx convex env set PERPLEXITY_API_KEY ...`)
+//      PERPLEXITY_MODEL    (optional override; default "sonar-pro")
 
-const AGENT_URL = "https://api.perplexity.ai/v1/agent";
+const CHAT_URL = "https://api.perplexity.ai/chat/completions";
 const SEARCH_URL = "https://api.perplexity.ai/search";
 
 export type RawItem = {
@@ -24,7 +28,6 @@ export type AgentResult = {
 };
 
 const wasteSchema = {
-  name: "waste_detection",
   schema: {
     type: "object",
     additionalProperties: false,
@@ -70,7 +73,7 @@ function systemPrompt(lat?: number, lng?: number): string {
     "You are BinSight, an expert in municipal waste classification.",
     "Identify every distinct waste item visible in the photo.",
     "For each item, decide whether it should be recycled, composted, trashed, or treated as hazardous, given the user's location.",
-    "Use web_search when local recycling rules might change the answer (e.g. plastic film, glass, batteries).",
+    "Search the web when local recycling rules might change the answer (e.g. plastic film, glass, batteries).",
     "Be conservative: if a container is contaminated with food and the local program rejects contaminated items, mark as trash.",
     loc,
   ].join(" ");
@@ -86,31 +89,27 @@ export async function classifyImage(
   if (!apiKey) {
     throw new Error("PERPLEXITY_API_KEY is not set on this Convex deployment");
   }
-  const model = process.env.PERPLEXITY_MODEL ?? "claude-opus-4-7";
+  const model = process.env.PERPLEXITY_MODEL ?? "sonar-pro";
 
   const base64 = arrayBufferToBase64(imageBytes);
   const dataUrl = `data:${contentType || "image/jpeg"};base64,${base64}`;
 
   const body = {
     model,
-    tools: ["web_search"],
     response_format: { type: "json_schema", json_schema: wasteSchema },
     messages: [
       { role: "system", content: systemPrompt(lat, lng) },
       {
         role: "user",
         content: [
-          {
-            type: "input_text",
-            text: "Classify the items in this photo for disposal.",
-          },
-          { type: "input_image", image_url: dataUrl },
+          { type: "text", text: "Classify the items in this photo for disposal." },
+          { type: "image_url", image_url: { url: dataUrl } },
         ],
       },
     ],
   };
 
-  const res = await fetch(AGENT_URL, {
+  const res = await fetch(CHAT_URL, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${apiKey}`,
@@ -120,7 +119,7 @@ export async function classifyImage(
   });
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(`Perplexity Agent API ${res.status}: ${text.slice(0, 500)}`);
+    throw new Error(`Perplexity API ${res.status}: ${text.slice(0, 500)}`);
   }
   const json: any = await res.json();
 
@@ -135,66 +134,51 @@ export async function classifyImage(
 }
 
 /**
- * Lightweight verification call: ask the Search API to confirm the top item's
- * recyclability. Returns true if any of the top results contain a matching
- * decision keyword. Best-effort; failures are non-fatal upstream.
+ * Lightweight verification: ask the Search API to corroborate the top item's
+ * decision. Best-effort; failures are non-fatal upstream.
  */
 export async function verifyTopItem(item: RawItem): Promise<boolean> {
   const apiKey = process.env.PERPLEXITY_API_KEY;
   if (!apiKey) return false;
-  const query = `Is a ${item.label} (${item.material}) ${item.decision === "recycle" ? "recyclable" : item.decision}?`;
-  const res = await fetch(SEARCH_URL, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ query, max_results: 5 }),
-  });
-  if (!res.ok) return false;
-  const json: any = await res.json();
-  const blob = JSON.stringify(json).toLowerCase();
-  if (item.decision === "recycle") return blob.includes("recycl");
-  if (item.decision === "compost") return blob.includes("compost");
-  if (item.decision === "hazard") return blob.includes("hazard") || blob.includes("battery");
-  return blob.includes("trash") || blob.includes("landfill");
+  const query = `Is a ${item.label} (${item.material}) ${
+    item.decision === "recycle" ? "recyclable" : item.decision
+  }?`;
+  try {
+    const res = await fetch(SEARCH_URL, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ query, max_results: 5 }),
+    });
+    if (!res.ok) return false;
+    const json: any = await res.json();
+    const blob = JSON.stringify(json).toLowerCase();
+    if (item.decision === "recycle") return blob.includes("recycl");
+    if (item.decision === "compost") return blob.includes("compost");
+    if (item.decision === "hazard") return blob.includes("hazard") || blob.includes("battery");
+    return blob.includes("trash") || blob.includes("landfill");
+  } catch {
+    return false;
+  }
 }
 
 function extractStructured(json: any): { items?: RawItem[]; localRules?: string } {
-  // Agent API returns content in a few different shapes depending on model.
-  // Try the common ones in order; fall back to scanning for a JSON blob.
-  const candidates: any[] = [];
-  if (json.output_parsed) candidates.push(json.output_parsed);
-  if (json.parsed) candidates.push(json.parsed);
-  const choice = json.choices?.[0];
-  if (choice?.message?.parsed) candidates.push(choice.message.parsed);
+  const choice = json?.choices?.[0];
   const content = choice?.message?.content;
   if (typeof content === "string") {
     try {
-      candidates.push(JSON.parse(content));
+      const parsed = JSON.parse(content);
+      if (parsed && Array.isArray(parsed.items)) return parsed;
     } catch {
       const match = content.match(/\{[\s\S]*\}/);
       if (match) {
         try {
-          candidates.push(JSON.parse(match[0]));
+          const parsed = JSON.parse(match[0]);
+          if (parsed && Array.isArray(parsed.items)) return parsed;
         } catch {
           /* ignore */
         }
       }
     }
-  } else if (Array.isArray(content)) {
-    for (const part of content) {
-      if (part?.type === "output_text" && typeof part.text === "string") {
-        try {
-          candidates.push(JSON.parse(part.text));
-        } catch {
-          /* ignore */
-        }
-      }
-    }
-  }
-  for (const c of candidates) {
-    if (c && Array.isArray(c.items)) return c;
   }
   return {};
 }
@@ -206,6 +190,5 @@ function arrayBufferToBase64(buf: ArrayBuffer): string {
   for (let i = 0; i < bytes.length; i += chunk) {
     binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
   }
-  // btoa is available in Convex's V8 runtime.
   return btoa(binary);
 }

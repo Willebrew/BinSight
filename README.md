@@ -8,7 +8,7 @@ Founders: Will + Henry.
 
 - **iOS 26+ SwiftUI** with Liquid Glass (`glassEffect`, `GlassEffectContainer`)
 - **Convex** — real-time database, file storage, actions, Convex Auth (email OTP via Resend)
-- **Perplexity Agent API** (Claude Opus 4.7) called from a Convex action; `web_search` tool enabled for local rules
+- **Perplexity sonar-pro** (chat-completions API) called from a Convex action; built-in web search returns citations alongside the structured classification
 - **Perplexity Search API** for verification + nearby recycling-facility lookups
 - **MapKit + Core Location** for the impact map
 - **Swift Charts** for dashboard visualizations

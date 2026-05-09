@@ -1,60 +1,50 @@
 import SwiftUI
-import Combine
 
 struct SettingsView: View {
-    @EnvironmentObject private var session: AuthSession
-    @State private var profile: ProfileDoc?
-    @State private var subscription: AnyCancellable?
-    @State private var phoneNumber: String = ""
-    @State private var savingPhone = false
-    @State private var phoneError: String?
+    @ObservedObject private var store = LocalHistoryStore.shared
+    @State private var showResetConfirm = false
 
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
-                    accountSection
-                    phoneSection
-                    privacySection
-                    signOutSection
+                    aboutSection
+                    apiSection
+                    dataSection
                 }
                 .padding(20)
             }
             .navigationTitle("Settings")
         }
-        .task {
-            subscription = ConvexService.shared.subscribeMe()
-                .receive(on: DispatchQueue.main)
-                .sink(receiveCompletion: { _ in }, receiveValue: { profile = $0 })
+        .confirmationDialog("Erase all local history?", isPresented: $showResetConfirm) {
+            Button("Erase", role: .destructive) {
+                LocalHistoryStore.shared.clearAll()
+            }
+            Button("Cancel", role: .cancel) {}
         }
     }
 
-    private var accountSection: some View {
+    private var aboutSection: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("Account").font(.headline)
-            Text(profile?.email ?? "—").font(.callout)
-            if let name = profile?.name { Text(name).font(.caption).foregroundStyle(.secondary) }
+            Text("BinSight").font(.headline)
+            Text("Snap a photo of any waste item, and BinSight will tell you whether to recycle, compost, trash, or treat it as hazardous.")
+                .font(.callout).foregroundStyle(.secondary)
+            Text("v0.1 — direct Perplexity mode")
+                .font(.caption2.monospaced()).foregroundStyle(.secondary)
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
         .glassSurface(RoundedRectangle(cornerRadius: 16, style: .continuous), variant: .regular)
     }
 
-    private var phoneSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Phone (optional)").font(.headline)
-            Text("Used so friends can find you via contacts. We store only a hash.")
-                .font(.footnote).foregroundStyle(.secondary)
+    private var apiSection: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Classification API").font(.headline)
             HStack {
-                TextField("+1 555 555 0123", text: $phoneNumber)
-                    .keyboardType(.phonePad)
-                    .padding(10)
-                    .glassSurface(RoundedRectangle(cornerRadius: 12, style: .continuous), variant: .clear)
-                Button(savingPhone ? "Saving…" : "Save") { savePhone() }
-                    .disabled(savingPhone || phoneNumber.isEmpty)
-            }
-            if let err = phoneError {
-                Text(err).font(.caption).foregroundStyle(.red)
+                Image(systemName: PerplexityClient.isConfigured ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+                    .foregroundStyle(PerplexityClient.isConfigured ? BinSightTokens.Color.recycle : BinSightTokens.Color.hazard)
+                Text(PerplexityClient.isConfigured ? "Perplexity API key configured" : "PERPLEXITY_API_KEY missing in Info.plist")
+                    .font(.callout)
             }
         }
         .padding(14)
@@ -62,47 +52,20 @@ struct SettingsView: View {
         .glassSurface(RoundedRectangle(cornerRadius: 16, style: .continuous), variant: .regular)
     }
 
-    private var privacySection: some View {
+    private var dataSection: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Privacy").font(.headline)
-            Toggle("Show me on the global impact map", isOn: Binding(
-                get: { profile?.privacy.mapOptIn ?? false },
-                set: { newValue in Task { try? await ConvexService.shared.updateProfile(mapOptIn: newValue) } }
-            ))
-            Toggle("Allow contact discovery", isOn: Binding(
-                get: { profile?.privacy.contactsOptIn ?? false },
-                set: { newValue in Task { try? await ConvexService.shared.updateProfile(contactsOptIn: newValue) } }
-            ))
+            Text("Data").font(.headline)
+            Text("\(store.rows.count) scans saved on this device")
+                .font(.callout).foregroundStyle(.secondary)
+            Button(role: .destructive) {
+                showResetConfirm = true
+            } label: {
+                Text("Erase history").frame(maxWidth: .infinity).padding(.vertical, 10)
+            }
+            .glassSurface(RoundedRectangle(cornerRadius: 14, style: .continuous), variant: .clear)
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
         .glassSurface(RoundedRectangle(cornerRadius: 16, style: .continuous), variant: .regular)
-    }
-
-    private var signOutSection: some View {
-        Button(role: .destructive) {
-            session.signOut()
-        } label: {
-            Text("Sign out").frame(maxWidth: .infinity).padding(.vertical, 12)
-        }
-        .glassSurface(RoundedRectangle(cornerRadius: 16, style: .continuous), variant: .clear)
-    }
-
-    private func savePhone() {
-        guard let e164 = ContactsImporter.normalizeToE164(phoneNumber) else {
-            phoneError = "Couldn't read that number."; return
-        }
-        savingPhone = true
-        phoneError = nil
-        Task {
-            defer { savingPhone = false }
-            do {
-                let hash = ContactsImporter.sha256Hex(e164)
-                try await ConvexService.shared.updateProfile(phoneHash: hash)
-                phoneNumber = ""
-            } catch {
-                phoneError = error.localizedDescription
-            }
-        }
     }
 }

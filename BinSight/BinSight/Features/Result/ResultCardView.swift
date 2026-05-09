@@ -1,9 +1,10 @@
 import SwiftUI
+import Combine
 
 struct ResultCardView: View {
     let classificationId: String
+    @ObservedObject private var store = LocalHistoryStore.shared
     @State private var doc: ClassificationDoc?
-    @State private var error: String?
 
     var body: some View {
         GlassRoot {
@@ -18,6 +19,7 @@ struct ResultCardView: View {
                         } else if d.status == "error" {
                             Text(d.errorMessage ?? "Something went wrong.")
                                 .foregroundStyle(.red)
+                                .padding(.vertical, 12)
                         } else {
                             ForEach(d.items) { item in
                                 ItemRow(item: item)
@@ -29,8 +31,6 @@ struct ResultCardView: View {
                                 citations(d.citations)
                             }
                         }
-                    } else if let err = error {
-                        Text(err).foregroundStyle(.red)
                     } else {
                         ProgressView().padding(40)
                     }
@@ -38,8 +38,11 @@ struct ResultCardView: View {
                 .padding(20)
             }
         }
-        .task { subscribe() }
+        .onAppear { refresh() }
+        .onReceive(store.$rows) { _ in refresh() }
     }
+
+    private func refresh() { doc = store.find(classificationId) }
 
     private func header(_ d: ClassificationDoc) -> some View {
         HStack(alignment: .top, spacing: 12) {
@@ -57,10 +60,8 @@ struct ResultCardView: View {
                     .font(.title2.weight(.bold))
                 Text(Date(timeIntervalSince1970: d.capturedAt / 1000).formatted(date: .abbreviated, time: .shortened))
                     .font(.caption).foregroundStyle(.secondary)
-                if d.verified {
-                    Label("Verified", systemImage: "checkmark.seal.fill")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(BinSightTokens.Color.recycle)
+                if let model = d.model {
+                    Text(model).font(.caption2.monospaced()).foregroundStyle(.secondary)
                 }
             }
             Spacer()
@@ -88,20 +89,6 @@ struct ResultCardView: View {
             }
         }
     }
-
-    private func subscribe() {
-        let cancellable = ConvexService.shared.subscribeClassification(id: classificationId)
-            .receive(on: DispatchQueue.main)
-            .sink { completion in
-                if case .failure(let e) = completion { error = e.localizedDescription }
-            } receiveValue: { value in
-                self.doc = value
-            }
-        // Hold ownership for view lifetime
-        Self.subscriptions[classificationId] = cancellable
-    }
-
-    private static var subscriptions: [String: AnyCancellable] = [:]
 }
 
 private struct ItemRow: View {
@@ -141,5 +128,3 @@ private struct ItemRow: View {
             .foregroundStyle(decisionColor)
     }
 }
-
-import Combine

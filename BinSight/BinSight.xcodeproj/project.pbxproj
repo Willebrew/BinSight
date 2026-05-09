@@ -256,6 +256,9 @@
 				DEVELOPMENT_TEAM = 9972ZZH3LW;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_NSCameraUsageDescription = "BinSight uses the camera to scan waste items so it can tell you whether to recycle, compost, trash, or treat them as hazardous.";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Used so BinSight can surface the recycling rules in effect where you are.";
+				INFOPLIST_KEY_PERPLEXITY_API_KEY = "$(PERPLEXITY_API_KEY)";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -288,6 +291,9 @@
 				DEVELOPMENT_TEAM = 9972ZZH3LW;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_NSCameraUsageDescription = "BinSight uses the camera to scan waste items so it can tell you whether to recycle, compost, trash, or treat them as hazardous.";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Used so BinSight can surface the recycling rules in effect where you are.";
+				INFOPLIST_KEY_PERPLEXITY_API_KEY = "$(PERPLEXITY_API_KEY)";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;

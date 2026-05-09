@@ -1,15 +1,20 @@
 import SwiftUI
-import Combine
 
 struct HistoryView: View {
-    @State private var rows: [ClassificationDoc] = []
-    @State private var subscription: AnyCancellable?
+    @ObservedObject private var store = LocalHistoryStore.shared
     @State private var openId: String?
 
     var body: some View {
         ScrollView {
             LazyVStack(spacing: 12) {
-                ForEach(rows) { row in
+                if store.rows.isEmpty {
+                    Text("No scans yet — tap the shutter on the camera tab to get started.")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                        .padding(40)
+                }
+                ForEach(store.rows) { row in
                     Button { openId = row._id } label: { HistoryRow(doc: row) }
                         .buttonStyle(.plain)
                 }
@@ -17,11 +22,6 @@ struct HistoryView: View {
             .padding(20)
         }
         .navigationTitle("History")
-        .task {
-            subscription = ConvexService.shared.subscribeHistory()
-                .receive(on: DispatchQueue.main)
-                .sink(receiveCompletion: { _ in }, receiveValue: { rows = $0 })
-        }
         .sheet(item: Binding(
             get: { openId.map { Identified(value: $0) } },
             set: { openId = $0?.value }
@@ -45,8 +45,9 @@ private struct HistoryRow: View {
                     .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
             }
             VStack(alignment: .leading, spacing: 4) {
-                Text(doc.items.first?.label ?? "Pending")
+                Text(doc.items.first?.label ?? (doc.status == "pending" ? "Classifying…" : "—"))
                     .font(.headline)
+                    .lineLimit(1)
                 Text(Date(timeIntervalSince1970: doc.capturedAt / 1000).formatted(date: .abbreviated, time: .shortened))
                     .font(.caption).foregroundStyle(.secondary)
                 if let first = doc.items.first {

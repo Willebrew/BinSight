@@ -13,29 +13,29 @@ final class CaptureFlow: ObservableObject {
         isWorking = true
         defer { isWorking = false }
         lastError = nil
-        do {
-            let storageId = try await ConvexService.shared.upload(image: jpeg)
-            let geohash5: String? = (lat != nil && lng != nil)
-                ? Geohash.encode(latitude: lat!, longitude: lng!, precision: 5)
-                : nil
-            let id = try await ConvexService.shared.createClassification(
-                storageId: storageId, lat: lat, lng: lng, geohash5: geohash5
-            )
-            // Fire-and-forget the action; UI subscribes by id and renders progress.
-            Task { try? await runWithRetry(id: id) }
-            return id
-        } catch {
-            lastError = error.localizedDescription
-            throw error
-        }
-    }
 
-    private func runWithRetry(id: String) async throws {
-        do {
-            try await ConvexService.shared.runClassifyAction(id: id)
-        } catch {
-            try? await Task.sleep(nanoseconds: 1_500_000_000)
-            try await ConvexService.shared.runClassifyAction(id: id)
+        let imageURL = LocalHistoryStore.shared.storeImage(jpeg)
+        let pending = LocalHistoryStore.shared.insertPending(imageURL: imageURL, lat: lat, lng: lng)
+
+        Task {
+            do {
+                let result = try await PerplexityClient.classify(jpeg: jpeg, lat: lat, lng: lng)
+                LocalHistoryStore.shared.update(pending._id) { doc in
+                    doc.status = "done"
+                    doc.items = result.items
+                    doc.localRules = result.localRules
+                    doc.citations = result.citations
+                    doc.model = result.model
+                    doc.verified = false
+                }
+            } catch {
+                LocalHistoryStore.shared.update(pending._id) { doc in
+                    doc.status = "error"
+                    doc.errorMessage = error.localizedDescription
+                }
+            }
         }
+
+        return pending._id
     }
 }
