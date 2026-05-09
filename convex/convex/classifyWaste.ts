@@ -12,6 +12,7 @@ type StoredSource = {
   publisher: string;
   snippet: string;
   tier: "official" | "authoritative" | "community" | "unknown";
+  kind: "material" | "rule" | "both";
   isLocal: boolean;
   supportsItemIndices: number[];
 };
@@ -89,12 +90,16 @@ export const run = action({
       const ranked: StoredSource[] = merged.ranked.map((s, newIdx) => {
         const old = s.originalIdx;
         if (old !== undefined) remap.set(old, newIdx);
+        const kind = s.kind === "material" || s.kind === "rule" || s.kind === "both"
+          ? s.kind
+          : "rule";
         return {
           url: s.url,
           title: s.title || hostOf(s.url),
           publisher: s.publisher || hostOf(s.url),
           snippet: s.snippet || "",
           tier: tierFor(s.url),
+          kind,
           isLocal: isLocalSource(s.url, row.city ?? undefined, row.state ?? undefined),
           supportsItemIndices: [], // filled below
         };
@@ -116,16 +121,10 @@ export const run = action({
         item.sourceIndices = remapped;
       });
 
-      // 3. Best-effort independent verification of the top item.
-      let verified = false;
-      if (items.length > 0) {
-        try {
-          verified = await verifyTopItem(agent.items[0]);
-        } catch {
-          verified = false;
-        }
-      }
-
+      // 3. Stream the classification result to the client immediately —
+      //    the UI is subscribed to this row, so writing now (before the
+      //    verification step) lets users see items, sources, and rules
+      //    a few seconds earlier than waiting for verify to finish.
       await ctx.runMutation(internal.classifications.writeResult, {
         id,
         items,
@@ -133,8 +132,26 @@ export const run = action({
         localRules: agent.localRules,
         citations: agent.citations,
         model: agent.model,
-        verified,
+        verified: false,
       });
+
+      // 4. Run verifications for the top items in parallel — independent
+      //    Search-API calls don't block each other, and the result is just
+      //    a boolean badge so we patch it after the items have already
+      //    streamed to the UI.
+      if (items.length > 0) {
+        const topN = Math.min(items.length, 3);
+        const checks = await Promise.all(
+          agent.items.slice(0, topN).map((it) =>
+            verifyTopItem(it).catch(() => false),
+          ),
+        );
+        const verified = checks.some(Boolean);
+        await ctx.runMutation(internal.classifications.setVerified, {
+          id,
+          verified,
+        });
+      }
     } catch (e: any) {
       await ctx.runMutation(internal.classifications.writeError, {
         id,
@@ -227,6 +244,7 @@ type MergedSource = {
   title: string;
   publisher: string;
   snippet: string;
+  kind?: string;            // "material" | "rule" | "both" if the model tagged it
   originalIdx?: number;     // index in the agent's structured sources array (if any)
 };
 
@@ -251,6 +269,7 @@ function mergeSources(
       title: existing?.title || s.title || "",
       publisher: existing?.publisher || s.publisher || "",
       snippet: existing?.snippet || s.snippet || "",
+      kind: existing?.kind ?? s.kind,
       originalIdx: existing?.originalIdx ?? idx,
     });
   });

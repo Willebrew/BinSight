@@ -22,6 +22,13 @@ export const sourceTierValidator = v.union(
   v.literal("unknown"),
 );
 
+/** What a source backs up: material identification, the disposal rule, or both. */
+export const sourceKindValidator = v.union(
+  v.literal("material"),
+  v.literal("rule"),
+  v.literal("both"),
+);
+
 /**
  * One source supporting one or more item decisions in a classification.
  * `supportsItemIndices` lets us render per-item attribution without storing
@@ -33,6 +40,9 @@ export const sourceValidator = v.object({
   publisher: v.string(),
   snippet: v.string(),
   tier: sourceTierValidator,
+  // Optional for back-compat with classifications written before the
+  // material/rule split; new rows always set this.
+  kind: v.optional(sourceKindValidator),
   isLocal: v.boolean(),                    // true when host matches user's city/state
   supportsItemIndices: v.array(v.number()),
 });

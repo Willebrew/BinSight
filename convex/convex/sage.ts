@@ -21,6 +21,8 @@ export type RawSource = {
   title?: string;
   publisher?: string;
   snippet?: string;
+  /** "material" | "rule" | "both" — what this source supports. */
+  kind?: string;
   /** indices into the items array that this source supports */
   supportsItemIndices?: number[];
 };
@@ -98,22 +100,28 @@ const wasteSchema = {
       sources: {
         type: "array",
         description:
-          "Distinct authoritative sources used. Prefer .gov, EPA, or the user's own municipal recycling site; fall back to manufacturer take-back or major news only when official guidance is missing.",
+          "Distinct authoritative sources used. MUST include BOTH (a) sources that identify the object/material (manufacturer pages, Wikipedia, product spec sheets, material composition references) AND (b) sources that justify the disposal decision (municipal program pages, EPA, state guidance). Don't list the same URL twice.",
         items: {
           type: "object",
           additionalProperties: false,
-          required: ["url", "title", "publisher", "snippet"],
+          required: ["url", "title", "publisher", "snippet", "kind"],
           properties: {
             url: { type: "string", description: "Full URL." },
             title: { type: "string", description: "Page title." },
             publisher: {
               type: "string",
-              description: "Publishing organization, e.g. 'EPA', 'SF Environment', 'Recology'.",
+              description: "Publishing organization, e.g. 'EPA', 'SF Environment', 'Recology', 'Wikipedia'.",
             },
             snippet: {
               type: "string",
               description:
                 "1-2 sentence direct quote or close paraphrase from the page that supports the items pointing to this source.",
+            },
+            kind: {
+              type: "string",
+              enum: ["material", "rule", "both"],
+              description:
+                "What this source supports. 'material' = identifies what the object is made of; 'rule' = states the local disposal rule; 'both' = covers both.",
             },
           },
         },
@@ -142,6 +150,7 @@ function systemPrompt(lat?: number, lng?: number, city?: string, state?: string)
     "Search the web when local recycling rules might change the answer (plastic film, glass, batteries, soiled paper, etc.).",
     "Be conservative: if a container is contaminated with food and the local program rejects contaminated items, mark as trash.",
     "When sourcing, prefer official municipal pages (e.g. 'sfenvironment.org', 'nyc.gov/sanitation') and .gov / EPA over blogs or forums.",
+    "For EACH item, include sources of BOTH kinds when possible: (a) material/object identification (manufacturer site, Wikipedia, product spec) tagged with kind='material', and (b) local disposal rule (municipal program, EPA) tagged with kind='rule'. Use kind='both' if a single source covers both.",
     "Every item MUST point to at least one entry in the `sources` array via `sourceIndices`. Sources should be distinct (don't list the same URL twice).",
     loc,
   ].join(" ");

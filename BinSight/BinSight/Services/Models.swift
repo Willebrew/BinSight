@@ -9,6 +9,7 @@ struct SourceDoc: Codable, Hashable, Identifiable {
     var publisher: String
     var snippet: String
     var tier: String              // official | authoritative | community | unknown
+    var kind: String?             // material | rule | both (optional for back-compat)
     var isLocal: Bool
     var supportsItemIndices: [Int]
     var id: String { url }

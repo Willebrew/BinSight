@@ -58,6 +58,13 @@ export const writeResult = internalMutation({
   },
 });
 
+export const setVerified = internalMutation({
+  args: { id: v.id("classifications"), verified: v.boolean() },
+  handler: async (ctx, { id, verified }) => {
+    await ctx.db.patch(id, { verified });
+  },
+});
+
 export const writeError = internalMutation({
   args: { id: v.id("classifications"), errorMessage: v.string() },
   handler: async (ctx, { id, errorMessage }) => {

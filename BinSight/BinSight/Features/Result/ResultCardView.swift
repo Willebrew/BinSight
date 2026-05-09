@@ -159,12 +159,13 @@ struct ResultCardView: View {
 
             if d.verified {
                 Label("Verified", systemImage: "checkmark.seal.fill")
-                    .font(.caption.weight(.semibold))
+                    .font(.caption.weight(.bold))
                     .padding(.horizontal, 10).padding(.vertical, 6)
-                    .background(.ultraThinMaterial, in: Capsule())
-                    .foregroundStyle(BinSightTokens.Color.recycle)
-                    .padding(.top, 12).padding(.trailing, 12)
-                    .frame(maxWidth: .infinity, alignment: .topTrailing)
+                    .background(BinSightTokens.Color.recycle, in: Capsule())
+                    .foregroundStyle(.white)
+                    .shadow(color: .black.opacity(0.18), radius: 6, x: 0, y: 2)
+                    .padding(.top, 14).padding(.trailing, 14)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
             }
 
             // Title sits at the bottom of the hero, well clear of the back button
