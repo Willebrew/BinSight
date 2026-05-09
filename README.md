@@ -59,9 +59,33 @@ BinSight/
         └── Services/{ConvexService,ConvexAuthProvider,LocationProvider,Models}.swift
 ```
 
+## Current build mode: direct Perplexity (v0)
+
+This branch ships a **direct-to-Perplexity** iPhone build so you can install and use the app without standing up a backend. The full Convex backend code is preserved under `convex/` for the next phase.
+
+In v0:
+- Camera → on-device classification call to Perplexity sonar-pro → Liquid Glass result card
+- All scans persist locally on device (history, dashboard)
+- Friends, leaderboards, global impact map are scaffolded server-side but disabled in the app until Convex is wired
+
 ## Setup
 
-### 1. Convex backend
+### iPhone install (direct mode)
+
+```bash
+cd BinSight
+xcodebuild -project BinSight.xcodeproj -scheme BinSight \
+  -destination "platform=iOS,name=<Your iPhone>" \
+  PERPLEXITY_API_KEY=pplx-yourkey build
+xcrun devicectl device install app --device <udid> \
+  /path/to/BinSight.app
+```
+
+Or in Xcode: set `PERPLEXITY_API_KEY` in build settings (or via a gitignored `Secrets.xcconfig`), select your iPhone as the run destination, ⌘R.
+
+> ⚠️ **Rotate your Perplexity key** before sharing this build — it's read from Info.plist at runtime, so anyone with the .ipa can extract it. Server-side classification (Convex action) is the production path; v0 is for personal testing only.
+
+### 1. Convex backend (later phase)
 
 ```bash
 cd convex
