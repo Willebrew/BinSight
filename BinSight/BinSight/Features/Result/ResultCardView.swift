@@ -36,39 +36,41 @@ struct ResultCardView: View {
     @ViewBuilder
     private func reviewedView(for d: ClassificationDoc) -> some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: 0) {
                 hero(d)
-                if d.status == "pending" {
-                    pendingBlock
-                } else if d.status == "error" {
-                    errorBlock(d)
-                } else {
-                    summaryBar(d)
-                    ForEach(Array(d.items.enumerated()), id: \.offset) { idx, item in
-                        CompactItemRow(
-                            item: item,
-                            sources: sources(for: item, in: d),
-                            onChangeReview: { state in
-                                Task {
-                                    try? await ConvexService.shared.reviewItem(
-                                        id: d._id, itemIndex: idx, state: state
-                                    )
+                VStack(alignment: .leading, spacing: 14) {
+                    if d.status == "pending" {
+                        pendingBlock
+                    } else if d.status == "error" {
+                        errorBlock(d)
+                    } else {
+                        summaryBar(d)
+                        ForEach(Array(d.items.enumerated()), id: \.offset) { idx, item in
+                            CompactItemRow(
+                                item: item,
+                                sources: sources(for: item, in: d),
+                                onChangeReview: { state in
+                                    Task {
+                                        try? await ConvexService.shared.reviewItem(
+                                            id: d._id, itemIndex: idx, state: state
+                                        )
+                                    }
                                 }
-                            }
-                        )
+                            )
+                        }
+                        if let rules = d.localRules, !rules.isEmpty {
+                            rulesBox(rules)
+                        }
+                        if let region = regionLabel(for: d) {
+                            regionChip(region)
+                        }
+                        actionButtons(d)
                     }
-                    if let rules = d.localRules, !rules.isEmpty {
-                        rulesBox(rules)
-                    }
-                    if let region = regionLabel(for: d) {
-                        regionChip(region)
-                    }
-                    actionButtons(d)
                 }
+                .padding(.horizontal, 16)
+                .padding(.top, 16)
+                .padding(.bottom, 30)
             }
-            .padding(.horizontal, 16)
-            .padding(.top, 4)
-            .padding(.bottom, 30)
         }
     }
 
@@ -148,13 +150,11 @@ struct ResultCardView: View {
             .frame(maxWidth: .infinity)
             .frame(height: 220)
             .clipped()
-            .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
             .overlay(
                 LinearGradient(
                     colors: [.black.opacity(0.0), .black.opacity(0.55)],
                     startPoint: .center, endPoint: .bottom
                 )
-                .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
             )
 
             if d.verified {
