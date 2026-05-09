@@ -6,6 +6,9 @@ struct DashboardView: View {
     @State private var metrics: MetricsDoc?
     @State private var rows: [ClassificationDoc] = []
     @State private var bag: Set<AnyCancellable> = []
+    @State private var animatedCo2: Double = 0
+    @State private var firstScanCelebration = false
+    @State private var hasSeenFirstScan = false
 
     var body: some View {
         NavigationStack {
@@ -28,10 +31,25 @@ struct DashboardView: View {
             .background(backdrop.ignoresSafeArea())
             .navigationTitle("Dashboard")
         }
+        .overlay {
+            if firstScanCelebration {
+                FirstScanCelebration { firstScanCelebration = false }
+                    .transition(.opacity)
+            }
+        }
         .onAppear {
             ConvexService.shared.subscribeMetrics()
                 .receive(on: DispatchQueue.main)
-                .sink(receiveCompletion: { _ in }, receiveValue: { metrics = $0 })
+                .sink(receiveCompletion: { _ in }, receiveValue: { newValue in
+                    let oldScans = metrics?.totalScans ?? 0
+                    metrics = newValue
+                    let target = newValue?.totalCo2Kg ?? 0
+                    withAnimation(.easeOut(duration: 0.9)) { animatedCo2 = target }
+                    if (newValue?.totalScans ?? 0) > 0 && oldScans == 0 && !hasSeenFirstScan {
+                        hasSeenFirstScan = true
+                        withAnimation(.easeIn(duration: 0.3)) { firstScanCelebration = true }
+                    }
+                })
                 .store(in: &bag)
             ConvexService.shared.subscribeHistory()
                 .receive(on: DispatchQueue.main)
@@ -55,9 +73,10 @@ struct DashboardView: View {
                     Image(systemName: "leaf.fill").foregroundStyle(.white.opacity(0.85))
                 }
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    Text(String(format: "%.2f", Double(m?.totalCo2Kg ?? 0)))
+                    Text(String(format: "%.2f", animatedCo2))
                         .font(.system(size: 56, weight: .heavy, design: .rounded))
                         .foregroundStyle(.white)
+                        .contentTransition(.numericText(value: animatedCo2))
                     Text("kg")
                         .font(.title3.weight(.semibold))
                         .foregroundStyle(.white.opacity(0.85))
@@ -217,6 +236,51 @@ struct DashboardView: View {
             colors: [Color(.systemGroupedBackground), Color(.systemBackground)],
             startPoint: .top, endPoint: .bottom
         )
+    }
+}
+
+private struct FirstScanCelebration: View {
+    let dismiss: () -> Void
+    @State private var pulse = false
+    @State private var rotate = false
+
+    var body: some View {
+        ZStack {
+            Color.black.opacity(0.55).ignoresSafeArea()
+            VStack(spacing: 18) {
+                ZStack {
+                    Circle()
+                        .fill(BinSightTokens.Color.recycle.opacity(0.35))
+                        .frame(width: 200, height: 200)
+                        .scaleEffect(pulse ? 1.15 : 0.85)
+                    Image(systemName: "leaf.circle.fill")
+                        .font(.system(size: 96, weight: .light))
+                        .foregroundStyle(.white)
+                        .rotationEffect(.degrees(rotate ? 360 : 0))
+                }
+                .frame(height: 200)
+                Text("First scan! 🎉")
+                    .font(.largeTitle.weight(.heavy))
+                    .foregroundStyle(.white)
+                Text("Every item you classify trains your impact.")
+                    .font(.callout)
+                    .foregroundStyle(.white.opacity(0.85))
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 40)
+                Button("Keep going", action: dismiss)
+                    .font(.headline)
+                    .foregroundStyle(BinSightTokens.Color.recycle)
+                    .frame(maxWidth: 260)
+                    .padding(.vertical, 14)
+                    .background(.white, in: Capsule())
+            }
+        }
+        .onAppear {
+            withAnimation(.easeInOut(duration: 1.4).repeatForever(autoreverses: true)) { pulse = true }
+            withAnimation(.linear(duration: 6).repeatForever(autoreverses: false)) { rotate = true }
+            HapticEngine.success.notificationOccurred(.success)
+        }
+        .onTapGesture { dismiss() }
     }
 }
 
