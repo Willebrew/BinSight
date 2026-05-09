@@ -1,15 +1,12 @@
+import { v } from "convex/values";
 import { query } from "./_generated/server";
-import { auth } from "./auth";
 
 export const summary = query({
-  args: {},
-  handler: async (ctx) => {
-    const authUserId = await auth.getUserId(ctx);
-    if (!authUserId) return null;
-
+  args: { clientId: v.string() },
+  handler: async (ctx, { clientId }) => {
     const rows = await ctx.db
       .query("classifications")
-      .withIndex("by_authUser_capturedAt", (q) => q.eq("authUserId", authUserId))
+      .withIndex("by_client_capturedAt", (q) => q.eq("clientId", clientId))
       .filter((q) => q.eq(q.field("status"), "done"))
       .collect();
 
@@ -35,17 +32,12 @@ export const summary = query({
       }
     }
 
-    const accuracy =
-      totalRecycled + totalTrashed === 0
-        ? 0
-        : totalRecycled / (totalRecycled + totalTrashed);
-
     return {
       totalScans: rows.length,
       totalRecycled,
       totalTrashed,
       totalCo2Kg: Number(totalCo2.toFixed(3)),
-      accuracy,
+      accuracy: totalRecycled + totalTrashed === 0 ? 0 : totalRecycled / (totalRecycled + totalTrashed),
       byMaterial,
       byDay,
     };

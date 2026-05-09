@@ -1,8 +1,10 @@
 import SwiftUI
 
-/// A glass-effect surface that gracefully falls back to an opaque material
-/// when Reduce Transparency is enabled. Use for floating cards / pills /
-/// circular controls.
+/// Applies a Liquid Glass-style surface to any view. Implementation uses
+/// `.ultraThinMaterial` rather than `glassEffect()` because the latter only
+/// reads correctly inside a `GlassEffectContainer`, which interferes with
+/// hit testing on Buttons. This compromise looks identical for our use cases
+/// (cards, capsules, pills) and keeps taps responsive.
 struct GlassSurface<S: Shape>: ViewModifier {
     var shape: S
     var variant: Glass
@@ -10,27 +12,27 @@ struct GlassSurface<S: Shape>: ViewModifier {
     enum Glass { case regular, clear, identity }
 
     func body(content: Content) -> some View {
-        ContentWrapper(content: content, shape: shape, variant: variant)
+        content
+            .background {
+                shape
+                    .fill(material)
+                    .overlay(shape.stroke(.white.opacity(strokeOpacity)))
+            }
     }
 
-    private struct ContentWrapper: View {
-        let content: Content
-        let shape: S
-        let variant: Glass
-        @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    private var material: Material {
+        switch variant {
+        case .regular:  return .ultraThinMaterial
+        case .clear:    return .thinMaterial
+        case .identity: return .regularMaterial
+        }
+    }
 
-        var body: some View {
-            if reduceTransparency {
-                content
-                    .background(.thinMaterial, in: shape)
-                    .overlay(shape.stroke(.white.opacity(0.08)))
-            } else {
-                switch variant {
-                case .regular:  content.glassEffect(.regular, in: shape)
-                case .clear:    content.glassEffect(.clear, in: shape)
-                case .identity: content.glassEffect(.identity, in: shape)
-                }
-            }
+    private var strokeOpacity: Double {
+        switch variant {
+        case .regular:  return 0.10
+        case .clear:    return 0.06
+        case .identity: return 0.14
         }
     }
 }

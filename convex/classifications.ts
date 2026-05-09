@@ -1,20 +1,18 @@
 import { v } from "convex/values";
 import { mutation, query, internalMutation } from "./_generated/server";
-import { auth } from "./auth";
 import { itemValidator } from "./schema";
 
 export const create = mutation({
   args: {
+    clientId: v.string(),
     storageId: v.id("_storage"),
     lat: v.optional(v.number()),
     lng: v.optional(v.number()),
     geohash5: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const authUserId = await auth.getUserId(ctx);
-    if (!authUserId) throw new Error("Not authenticated");
     return await ctx.db.insert("classifications", {
-      authUserId,
+      clientId: args.clientId,
       storageId: args.storageId,
       capturedAt: Date.now(),
       lat: args.lat,
@@ -57,25 +55,22 @@ export const writeError = internalMutation({
 });
 
 export const getById = query({
-  args: { id: v.id("classifications") },
-  handler: async (ctx, { id }) => {
+  args: { id: v.id("classifications"), clientId: v.string() },
+  handler: async (ctx, { id, clientId }) => {
     const row = await ctx.db.get(id);
     if (!row) return null;
-    const authUserId = await auth.getUserId(ctx);
-    if (row.authUserId !== authUserId) return null;
+    if (row.clientId !== clientId) return null;
     const imageUrl = await ctx.storage.getUrl(row.storageId);
     return { ...row, imageUrl };
   },
 });
 
-export const listForUser = query({
-  args: { limit: v.optional(v.number()) },
-  handler: async (ctx, { limit }) => {
-    const authUserId = await auth.getUserId(ctx);
-    if (!authUserId) return [];
+export const listForClient = query({
+  args: { clientId: v.string(), limit: v.optional(v.number()) },
+  handler: async (ctx, { clientId, limit }) => {
     const rows = await ctx.db
       .query("classifications")
-      .withIndex("by_authUser_capturedAt", (q) => q.eq("authUserId", authUserId))
+      .withIndex("by_client_capturedAt", (q) => q.eq("clientId", clientId))
       .order("desc")
       .take(limit ?? 50);
     return await Promise.all(

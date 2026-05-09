@@ -3,7 +3,6 @@ import { query } from "./_generated/server";
 
 /**
  * Anonymized aggregation of done classifications by 5-char geohash.
- * Returns counts only — no per-user data, no exact coordinates.
  */
 export const aggregate = query({
   args: { sinceMs: v.optional(v.number()) },
