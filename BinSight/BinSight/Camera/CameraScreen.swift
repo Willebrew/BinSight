@@ -139,17 +139,6 @@ struct CameraScreen: View {
                 Circle()
                     .stroke(.white.opacity(0.42), lineWidth: 2)
                     .frame(width: size * 0.55, height: size * 0.55)
-
-                if !flow.isWorking {
-                    VStack(spacing: 8) {
-                        Spacer()
-                        DuoBadge(text: "Center the item",
-                                 systemImage: "scope",
-                                 color: BinSightTokens.Color.recycle,
-                                 filled: true)
-                            .padding(.bottom, 188)
-                    }
-                }
             }
             .frame(width: geo.size.width, height: geo.size.height)
         }
