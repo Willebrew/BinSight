@@ -13,109 +13,122 @@ struct SignInView: View {
 
     var body: some View {
         ZStack {
-            backdrop
+            DuoBackdrop().ignoresSafeArea()
             ScrollView {
-                VStack(spacing: 22) {
-                    branding
+                VStack(spacing: 18) {
+                    header
                     modePicker
                     formCard
-                    submitButton
-                    if let err = convex.authError {
-                        Text(err).font(.footnote).foregroundStyle(.red).multilineTextAlignment(.center)
+                    Button {
+                        submit()
+                    } label: {
+                        if convex.authState == .signingIn {
+                            ProgressView().tint(.white)
+                        } else {
+                            Label(mode == .signIn ? "Sign In" : "Create Account",
+                                  systemImage: mode == .signIn ? "arrow.right.circle.fill" : "sparkles")
+                        }
                     }
-                    Spacer(minLength: 30)
+                    .buttonStyle(DuoButtonStyle(kind: .primary))
+                    .disabled(!canSubmit)
+                    .opacity(canSubmit ? 1 : 0.48)
+
+                    if let err = convex.authError {
+                        DuoCard(fill: Color.white.opacity(0.92), stroke: BinSightTokens.Color.trash.opacity(0.25), radius: 16, padding: 12) {
+                            Label(err, systemImage: "exclamationmark.triangle.fill")
+                                .font(.system(.footnote, design: .rounded).weight(.semibold))
+                                .foregroundStyle(BinSightTokens.Color.trash)
+                                .multilineTextAlignment(.leading)
+                        }
+                    }
                 }
                 .padding(.horizontal, 24)
-                .padding(.top, 60)
+                .padding(.top, 54)
+                .padding(.bottom, 36)
             }
         }
         .ignoresSafeArea(.keyboard, edges: .bottom)
     }
 
-    private var backdrop: some View {
-        LinearGradient(
-            colors: [
-                Color(red: 0.04, green: 0.16, blue: 0.16),
-                Color(red: 0.06, green: 0.34, blue: 0.32),
-                Color(red: 0.02, green: 0.10, blue: 0.12),
-            ],
-            startPoint: .top, endPoint: .bottom
-        ).ignoresSafeArea()
-    }
-
-    private var branding: some View {
-        VStack(spacing: 10) {
-            Image(systemName: "leaf.circle.fill")
-                .font(.system(size: 64, weight: .light))
-                .foregroundStyle(BinSightTokens.Color.recycle)
-            Text("BinSight").font(.largeTitle.weight(.heavy)).foregroundStyle(.white)
-            Text(mode == .signIn ? "Welcome back" : "Create your account")
-                .font(.callout)
-                .foregroundStyle(.white.opacity(0.75))
+    private var header: some View {
+        VStack(spacing: 14) {
+            MascotArtView(
+                mood: mode == .signIn ? .happy : .celebrate,
+                size: 132,
+                accessory: mode == .signIn ? "leaf.fill" : "star.fill"
+            )
+            VStack(spacing: 4) {
+                Text("BinSight")
+                    .font(.system(size: 44, weight: .heavy, design: .rounded))
+                    .foregroundStyle(BinSightTokens.Color.ink)
+                Text(mode == .signIn ? "Ready for another scan lesson?" : "Start your impact streak")
+                    .font(.system(.callout, design: .rounded).weight(.bold))
+                    .foregroundStyle(BinSightTokens.Color.softInk)
+            }
         }
     }
 
     private var modePicker: some View {
-        HStack(spacing: 4) {
+        HStack(spacing: 8) {
             modeTab("Sign in", .signIn)
             modeTab("Sign up", .signUp)
         }
-        .padding(4)
-        .background(.white.opacity(0.10), in: Capsule())
+        .padding(6)
+        .background(.white.opacity(0.75), in: Capsule())
+        .overlay(Capsule().stroke(.white, lineWidth: 1.5))
     }
 
     private func modeTab(_ label: String, _ value: Mode) -> some View {
         Button {
-            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { mode = value }
+            withAnimation(BinSightTokens.Motion.bounce) { mode = value }
         } label: {
             Text(label)
-                .font(.subheadline.weight(.semibold))
+                .font(.system(.subheadline, design: .rounded).weight(.heavy))
+                .foregroundStyle(mode == value ? .white : BinSightTokens.Color.softInk)
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 9)
+                .padding(.vertical, 10)
                 .background {
                     if mode == value {
                         Capsule().fill(BinSightTokens.Color.accent)
                     }
                 }
-                .foregroundStyle(mode == value ? .white : .white.opacity(0.7))
         }
         .buttonStyle(.plain)
     }
 
     private var formCard: some View {
-        VStack(spacing: 12) {
-            if mode == .signUp {
+        DuoGlassCard(tint: BinSightTokens.Color.recycle, radius: 24, padding: 14) {
+            VStack(spacing: 12) {
+                if mode == .signUp {
+                    field(
+                        icon: "person.fill",
+                        placeholder: "Name",
+                        text: $name,
+                        autoCap: .words,
+                        focus: .name,
+                        content: .name
+                    )
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+                }
                 field(
-                    icon: "person.fill",
-                    placeholder: "Name",
-                    text: $name,
-                    autoCap: .words,
-                    focus: .name,
-                    content: .name
+                    icon: "envelope.fill",
+                    placeholder: "Email",
+                    text: $email,
+                    keyboard: .emailAddress,
+                    focus: .email,
+                    content: .emailAddress
                 )
-                .transition(.opacity.combined(with: .move(edge: .top)))
+                field(
+                    icon: "lock.fill",
+                    placeholder: "Password (min 6 chars)",
+                    text: $password,
+                    isSecure: true,
+                    focus: .password,
+                    content: mode == .signUp ? .newPassword : .password
+                )
             }
-            field(
-                icon: "envelope.fill",
-                placeholder: "Email",
-                text: $email,
-                keyboard: .emailAddress,
-                focus: .email,
-                content: .emailAddress
-            )
-            field(
-                icon: "lock.fill",
-                placeholder: "Password (min 6 chars)",
-                text: $password,
-                isSecure: true,
-                focus: .password,
-                content: mode == .signUp ? .newPassword : .password
-            )
+            .animation(BinSightTokens.Motion.snap, value: mode)
         }
-        .padding(14)
-        .background(.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 18).stroke(.white.opacity(0.10)))
-        .animation(.spring(response: 0.32, dampingFraction: 0.85), value: mode)
     }
 
     @ViewBuilder
@@ -129,13 +142,15 @@ struct SignInView: View {
         focus: Field,
         content: UITextContentType
     ) -> some View {
-        HStack(spacing: 10) {
-            Image(systemName: icon).foregroundStyle(.white.opacity(0.6))
+        HStack(spacing: 11) {
+            Image(systemName: icon)
+                .foregroundStyle(BinSightTokens.Color.accent)
+                .frame(width: 26)
             Group {
                 if isSecure {
-                    SecureField("", text: text, prompt: Text(placeholder).foregroundStyle(.white.opacity(0.45)))
+                    SecureField("", text: text, prompt: Text(placeholder).foregroundStyle(BinSightTokens.Color.softInk))
                 } else {
-                    TextField("", text: text, prompt: Text(placeholder).foregroundStyle(.white.opacity(0.45)))
+                    TextField("", text: text, prompt: Text(placeholder).foregroundStyle(BinSightTokens.Color.softInk))
                 }
             }
             .textInputAutocapitalization(autoCap)
@@ -143,32 +158,13 @@ struct SignInView: View {
             .keyboardType(keyboard)
             .textContentType(content)
             .focused($focused, equals: focus)
-            .foregroundStyle(.white)
+            .foregroundStyle(BinSightTokens.Color.ink)
+            .font(.system(.body, design: .rounded).weight(.semibold))
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 11)
-        .background(.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-    }
-
-    private var submitButton: some View {
-        Button {
-            submit()
-        } label: {
-            HStack {
-                if convex.authState == .signingIn {
-                    ProgressView().tint(.black)
-                } else {
-                    Text(mode == .signIn ? "Sign in" : "Create account")
-                        .font(.headline)
-                }
-            }
-            .foregroundStyle(.black)
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 14)
-            .background(.white, in: Capsule())
-        }
-        .disabled(!canSubmit)
-        .opacity(canSubmit ? 1 : 0.5)
+        .padding(.horizontal, 13)
+        .padding(.vertical, 13)
+        .background(.white, in: RoundedRectangle(cornerRadius: 15, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 15, style: .continuous).stroke(BinSightTokens.Color.stroke, lineWidth: 1.5))
     }
 
     private var canSubmit: Bool {

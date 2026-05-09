@@ -20,8 +20,11 @@ import type * as http from "../http.js";
 import type * as impactTable from "../impactTable.js";
 import type * as map from "../map.js";
 import type * as metrics from "../metrics.js";
+import type * as migrate from "../migrate.js";
 import type * as profiles from "../profiles.js";
 import type * as sage from "../sage.js";
+import type * as weeklyInsights from "../weeklyInsights.js";
+import type * as weeklyInsightsAction from "../weeklyInsightsAction.js";
 
 import type {
   ApiFromModules,
@@ -42,8 +45,11 @@ declare const fullApi: ApiFromModules<{
   impactTable: typeof impactTable;
   map: typeof map;
   metrics: typeof metrics;
+  migrate: typeof migrate;
   profiles: typeof profiles;
   sage: typeof sage;
+  weeklyInsights: typeof weeklyInsights;
+  weeklyInsightsAction: typeof weeklyInsightsAction;
 }>;
 
 /**

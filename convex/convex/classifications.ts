@@ -1,7 +1,7 @@
 import { v } from "convex/values";
 import { mutation, query, internalMutation } from "./_generated/server";
 import { auth } from "./auth";
-import { itemValidator } from "./schema";
+import { itemValidator, sourceValidator, reviewStateValidator } from "./schema";
 
 export const create = mutation({
   args: {
@@ -28,6 +28,7 @@ export const create = mutation({
       country: args.country,
       status: "pending",
       items: [],
+      sources: [],
       citations: [],
       verified: false,
     });
@@ -38,6 +39,7 @@ export const writeResult = internalMutation({
   args: {
     id: v.id("classifications"),
     items: v.array(itemValidator),
+    sources: v.array(sourceValidator),
     localRules: v.optional(v.string()),
     citations: v.array(v.string()),
     model: v.string(),
@@ -47,6 +49,7 @@ export const writeResult = internalMutation({
     await ctx.db.patch(args.id, {
       status: "done",
       items: args.items,
+      sources: args.sources,
       localRules: args.localRules,
       citations: args.citations,
       model: args.model,
@@ -101,5 +104,53 @@ export const remove = mutation({
       await ctx.storage.delete(row.storageId);
     }
     await ctx.db.delete(id);
+  },
+});
+
+/**
+ * Triage one detected item — swipe right = `confirmed` (counts toward
+ * metrics), swipe left = `rejected` (does not count). `pending` items are
+ * intentionally excluded from CO2 / scan stats so the dashboard reflects
+ * only what the user has personally validated.
+ */
+export const reviewItem = mutation({
+  args: {
+    id: v.id("classifications"),
+    itemIndex: v.number(),
+    state: reviewStateValidator,
+  },
+  handler: async (ctx, { id, itemIndex, state }) => {
+    const userId = await auth.getUserId(ctx);
+    if (!userId) throw new Error("Not authenticated");
+    const row = await ctx.db.get(id);
+    if (!row || row.userId !== userId) throw new Error("Not found");
+    if (itemIndex < 0 || itemIndex >= row.items.length) {
+      throw new Error("itemIndex out of range");
+    }
+    const next = row.items.map((it, i) =>
+      i === itemIndex ? { ...it, reviewState: state, reviewedAt: Date.now() } : it,
+    );
+    await ctx.db.patch(id, { items: next });
+  },
+});
+
+/**
+ * Bulk triage helper — used by "Confirm all" / "Reject all" actions.
+ */
+export const reviewAll = mutation({
+  args: {
+    id: v.id("classifications"),
+    state: reviewStateValidator,
+  },
+  handler: async (ctx, { id, state }) => {
+    const userId = await auth.getUserId(ctx);
+    if (!userId) throw new Error("Not authenticated");
+    const row = await ctx.db.get(id);
+    if (!row || row.userId !== userId) throw new Error("Not found");
+    const now = Date.now();
+    const next = row.items.map((it) =>
+      it.reviewState === "pending" ? { ...it, reviewState: state, reviewedAt: now } : it,
+    );
+    await ctx.db.patch(id, { items: next });
   },
 });

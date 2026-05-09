@@ -24,6 +24,8 @@ struct HistoryView: View {
             }
         }
         .navigationTitle("History")
+        .navigationBarTitleDisplayMode(.inline)
+        .background(DuoBackdrop().ignoresSafeArea())
         .onAppear {
             subscription = ConvexService.shared.subscribeHistory()
                 .receive(on: DispatchQueue.main)
@@ -40,13 +42,11 @@ struct HistoryView: View {
 
     private var emptyState: some View {
         VStack(spacing: 14) {
-            Image(systemName: "tray.fill")
-                .font(.system(size: 48, weight: .light))
-                .foregroundStyle(.secondary)
-            Text("No scans yet").font(.headline)
+            MascotArtView(mood: .thinking, size: 112, accessory: "tray.fill")
+            Text("No scans yet").font(.system(.headline, design: .rounded).weight(.heavy)).foregroundStyle(BinSightTokens.Color.ink)
             Text("Tap the camera tab to start scanning waste.")
-                .font(.callout)
-                .foregroundStyle(.secondary)
+                .font(.system(.callout, design: .rounded).weight(.semibold))
+                .foregroundStyle(BinSightTokens.Color.softInk)
                 .multilineTextAlignment(.center)
         }
         .padding(40)
@@ -75,7 +75,7 @@ private struct HistoryRow: View {
             }
             .frame(maxWidth: .infinity)
             .frame(height: 96)
-            .background(BinSightTokens.Color.trash, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .background(BinSightTokens.Color.trash, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
             .opacity(min(1, abs(dragOffset) / 88))
 
             // Main row
@@ -111,10 +111,15 @@ private struct HistoryRow: View {
     private var rowContent: some View {
         HStack(spacing: 12) {
             // Decision color band
-            Capsule()
-                .fill(decisionColor)
-                .frame(width: 4, height: 64)
-                .padding(.vertical, 4)
+            VStack {
+                Image(systemName: duoDecisionSymbol(doc.items.first?.decision ?? "trash"))
+                    .font(.system(size: 15, weight: .heavy))
+                    .foregroundStyle(.white)
+                    .frame(width: 32, height: 32)
+                    .background(decisionColor, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                Spacer(minLength: 0)
+            }
+            .frame(height: 64)
 
             // Image
             if let urlString = doc.imageUrl, let url = URL(string: urlString) {
@@ -127,7 +132,8 @@ private struct HistoryRow: View {
             // Title + meta
             VStack(alignment: .leading, spacing: 4) {
                 Text(doc.items.first?.label.capitalized ?? (doc.status == "pending" ? "Classifying…" : "—"))
-                    .font(.subheadline.weight(.semibold))
+                    .font(.system(.subheadline, design: .rounded).weight(.heavy))
+                    .foregroundStyle(BinSightTokens.Color.ink)
                     .lineLimit(1)
                 if let first = doc.items.first {
                     HStack(spacing: 6) {
@@ -138,8 +144,8 @@ private struct HistoryRow: View {
                             .background(decisionColor, in: Capsule())
                         if let region = regionLabel {
                             Label(region, systemImage: "mappin")
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
+                                .font(.system(.caption2, design: .rounded).weight(.bold))
+                                .foregroundStyle(BinSightTokens.Color.softInk)
                                 .lineLimit(1)
                         }
                     }
@@ -147,7 +153,7 @@ private struct HistoryRow: View {
                 if let rules = doc.localRules, !rules.isEmpty {
                     Text(rules)
                         .font(.caption2)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(BinSightTokens.Color.softInk)
                         .lineLimit(2)
                 }
             }
@@ -159,7 +165,8 @@ private struct HistoryRow: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
         .frame(height: 96)
-        .glassSurface(RoundedRectangle(cornerRadius: 16, style: .continuous), variant: .regular)
+        .background(.white, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(BinSightTokens.Color.stroke, lineWidth: 1.5))
     }
 
     private var regionLabel: String? {

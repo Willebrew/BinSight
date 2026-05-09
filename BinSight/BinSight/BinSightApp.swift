@@ -33,18 +33,10 @@ struct BinSightApp: App {
 private struct LoadingScreen: View {
     var body: some View {
         ZStack {
-            LinearGradient(
-                colors: [
-                    Color(red: 0.04, green: 0.16, blue: 0.16),
-                    Color(red: 0.06, green: 0.34, blue: 0.32),
-                ],
-                startPoint: .top, endPoint: .bottom
-            ).ignoresSafeArea()
+            DuoBackdrop().ignoresSafeArea()
             VStack(spacing: 14) {
-                Image(systemName: "leaf.circle.fill")
-                    .font(.system(size: 56, weight: .light))
-                    .foregroundStyle(BinSightTokens.Color.recycle)
-                ProgressView().tint(.white.opacity(0.7))
+                MascotArtView(mood: .happy, size: 112, accessory: "leaf.fill")
+                ProgressView().tint(BinSightTokens.Color.recycle)
             }
         }
     }

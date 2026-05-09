@@ -26,18 +26,14 @@ struct ImpactMapView: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                LinearGradient(
-                    colors: [
-                        Color(red: 0.06, green: 0.18, blue: 0.22),
-                        Color(red: 0.04, green: 0.10, blue: 0.14),
-                    ],
-                    startPoint: .top, endPoint: .bottom
-                ).ignoresSafeArea()
+                DuoBackdrop().ignoresSafeArea()
 
                 VStack(spacing: 16) {
-                    levelPicker
+                    leagueHeader
                         .padding(.horizontal, 18)
                         .padding(.top, 8)
+                    levelPicker
+                        .padding(.horizontal, 18)
                     if rows.isEmpty {
                         emptyState
                     } else {
@@ -46,7 +42,7 @@ struct ImpactMapView: View {
                     Spacer(minLength: 0)
                 }
             }
-            .navigationTitle("Impact map")
+            .navigationTitle("League")
             .navigationBarTitleDisplayMode(.inline)
         }
         .onAppear { resubscribe() }
@@ -59,6 +55,22 @@ struct ImpactMapView: View {
         subscription = ConvexService.shared.subscribeMap(level: level.serverKey)
             .receive(on: DispatchQueue.main)
             .sink(receiveCompletion: { _ in }, receiveValue: { rows = $0 })
+    }
+
+    private var leagueHeader: some View {
+        DuoCard(fill: .white, stroke: BinSightTokens.Color.xp.opacity(0.35), radius: 26, padding: 16) {
+            HStack(spacing: 14) {
+                MascotArtView(mood: .celebrate, size: 82, accessory: "trophy.fill")
+                VStack(alignment: .leading, spacing: 5) {
+                    Text("Community League")
+                        .font(.system(.title2, design: .rounded).weight(.heavy))
+                        .foregroundStyle(BinSightTokens.Color.ink)
+                    Text("Rank regions by confirmed recycling activity.")
+                        .font(.system(.caption, design: .rounded).weight(.bold))
+                        .foregroundStyle(BinSightTokens.Color.softInk)
+                }
+            }
+        }
     }
 
     private var levelPicker: some View {
@@ -74,7 +86,7 @@ struct ImpactMapView: View {
                     .padding(.horizontal, 12)
                     .padding(.vertical, 8)
                     .frame(maxWidth: .infinity)
-                    .foregroundStyle(level == l ? .white : .white.opacity(0.65))
+                    .foregroundStyle(level == l ? .white : BinSightTokens.Color.softInk)
                     .background {
                         if level == l {
                             Capsule().fill(BinSightTokens.Color.accent)
@@ -85,7 +97,8 @@ struct ImpactMapView: View {
             }
         }
         .padding(6)
-        .glassSurface(Capsule(), variant: .regular)
+        .background(.white.opacity(0.78), in: Capsule())
+        .overlay(Capsule().stroke(.white, lineWidth: 1.5))
     }
 
     private var leaderboard: some View {
@@ -102,50 +115,50 @@ struct ImpactMapView: View {
 
     private func cellRow(rank: Int, cell: RegionCellDoc) -> some View {
         HStack(spacing: 14) {
-            Text("#\(rank)")
-                .font(.headline.monospaced())
-                .frame(width: 38, alignment: .leading)
-                .foregroundStyle(.white.opacity(0.7))
+            ZStack {
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(rank <= 3 ? BinSightTokens.Color.xp.opacity(0.28) : BinSightTokens.Color.accent.opacity(0.12))
+                    .frame(width: 46, height: 46)
+                Text("#\(rank)")
+                    .font(.system(.subheadline, design: .rounded).weight(.heavy))
+                    .foregroundStyle(rank <= 3 ? Color(red: 0.70, green: 0.44, blue: 0.00) : BinSightTokens.Color.accent)
+            }
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(cell.label.isEmpty ? "Unknown" : cell.label)
-                    .font(.headline)
-                    .foregroundStyle(.white)
+                    .font(.system(.headline, design: .rounded).weight(.heavy))
+                    .foregroundStyle(BinSightTokens.Color.ink)
                 HStack(spacing: 8) {
                     Label("\(cell.count)", systemImage: "camera.fill")
-                        .font(.caption)
-                        .foregroundStyle(.white.opacity(0.75))
+                        .font(.system(.caption, design: .rounded).weight(.bold))
+                        .foregroundStyle(BinSightTokens.Color.softInk)
                     Label("\(cell.recycled) recycled", systemImage: "leaf.fill")
-                        .font(.caption)
+                        .font(.system(.caption, design: .rounded).weight(.bold))
                         .foregroundStyle(BinSightTokens.Color.recycle)
                 }
-                ProgressView(
-                    value: Double(cell.recycled),
-                    total: Double(max(cell.count, 1))
-                )
-                .tint(BinSightTokens.Color.recycle)
+                DuoProgressBar(value: Double(cell.recycled), total: Double(max(cell.count, 1)), color: BinSightTokens.Color.recycle, height: 10)
             }
             Spacer()
         }
         .padding(14)
-        .glassSurface(RoundedRectangle(cornerRadius: 18, style: .continuous), variant: .regular)
+        .background(.white, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(BinSightTokens.Color.stroke, lineWidth: 2))
     }
 
     private var emptyState: some View {
         VStack(spacing: 10) {
-            Image(systemName: "globe.badge.chevron.backward")
-                .font(.system(size: 44, weight: .light))
-                .foregroundStyle(BinSightTokens.Color.recycle)
-            Text("No data here yet").font(.headline).foregroundStyle(.white)
+            MascotArtView(mood: .thinking, size: 106, accessory: "globe")
+            Text("No data here yet").font(.system(.headline, design: .rounded).weight(.heavy)).foregroundStyle(BinSightTokens.Color.ink)
             Text("As people scan items, this map fills in with cities, states, and countries.")
-                .font(.caption)
-                .foregroundStyle(.white.opacity(0.7))
+                .font(.system(.caption, design: .rounded).weight(.bold))
+                .foregroundStyle(BinSightTokens.Color.softInk)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 40)
         }
         .frame(maxWidth: .infinity)
         .padding(28)
-        .glassSurface(RoundedRectangle(cornerRadius: 22, style: .continuous), variant: .regular)
+        .background(.white, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous).stroke(BinSightTokens.Color.stroke, lineWidth: 2))
         .padding(.horizontal, 18)
     }
 }

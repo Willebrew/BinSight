@@ -12,15 +12,19 @@ struct SettingsView: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
+                    profileHero
                     aboutSection
                     accountSection
                     nameSection
+                    methodologyLink
                     backendSection
                     signOutButton
                 }
                 .padding(20)
             }
             .navigationTitle("Settings")
+            .navigationBarTitleDisplayMode(.inline)
+            .background(DuoBackdrop().ignoresSafeArea())
         }
         .onAppear {
             subscription = ConvexService.shared.subscribeProfile()
@@ -35,23 +39,45 @@ struct SettingsView: View {
 
     // MARK: - Sections
 
+    private var profileHero: some View {
+        DuoCard(fill: .white, stroke: BinSightTokens.Color.recycle.opacity(0.28), radius: 26, padding: 18) {
+            HStack(spacing: 15) {
+                MascotArtView(mood: .happy, size: 86, accessory: "person.fill")
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(profile?.displayName ?? "BinSight learner")
+                        .font(.system(.title2, design: .rounded).weight(.heavy))
+                        .foregroundStyle(BinSightTokens.Color.ink)
+                    Text(profile?.email ?? "Tune your impact coach")
+                        .font(.system(.caption, design: .rounded).weight(.bold))
+                        .foregroundStyle(BinSightTokens.Color.softInk)
+                        .lineLimit(1)
+                    DuoBadge(text: convex.authState == .signedIn ? "Signed in" : "Guest",
+                             systemImage: convex.authState == .signedIn ? "checkmark.seal.fill" : "person.crop.circle",
+                             color: convex.authState == .signedIn ? BinSightTokens.Color.recycle : BinSightTokens.Color.hazard)
+                }
+                Spacer()
+            }
+        }
+    }
+
     private var aboutSection: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("BinSight").font(.headline)
+            DuoSectionHeader(title: "About", systemImage: "leaf.fill")
             Text("Snap a photo of any waste item and BinSight tells you exactly where it goes — recycle, compost, trash, or hazardous.")
-                .font(.callout).foregroundStyle(.secondary)
-            Text("v0.3 — Convex Auth + Liquid Glass")
-                .font(.caption2.monospaced()).foregroundStyle(.secondary)
+                .font(.system(.callout, design: .rounded).weight(.semibold)).foregroundStyle(BinSightTokens.Color.softInk)
+            Text("v0.3 - Convex Auth + Liquid Glass")
+                .font(.caption2.monospaced().weight(.semibold)).foregroundStyle(BinSightTokens.Color.softInk)
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .glassSurface(RoundedRectangle(cornerRadius: 16, style: .continuous), variant: .regular)
+        .background(.white, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(BinSightTokens.Color.stroke, lineWidth: 1.5))
     }
 
     private var accountSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Text("Account").font(.headline)
+                DuoSectionHeader(title: "Account", systemImage: "person.crop.circle.fill")
                 Spacer()
                 if profile?.isAppleLinked == true {
                     Label("Apple linked", systemImage: "checkmark.seal.fill")
@@ -69,12 +95,12 @@ struct SettingsView: View {
                                      : BinSightTokens.Color.hazard)
                 VStack(alignment: .leading) {
                     Text(profile?.displayName ?? (profile?.isAppleLinked == true ? "Apple user" : "Anonymous"))
-                        .font(.callout.weight(.semibold))
+                        .font(.system(.callout, design: .rounded).weight(.heavy))
                     if let email = profile?.email {
-                        Text(email).font(.caption).foregroundStyle(.secondary)
+                        Text(email).font(.system(.caption, design: .rounded).weight(.semibold)).foregroundStyle(BinSightTokens.Color.softInk)
                     } else {
                         Text((convex.authState == .signedIn) ? "Signed in" : "Not signed in")
-                            .font(.caption).foregroundStyle(.secondary)
+                            .font(.system(.caption, design: .rounded).weight(.semibold)).foregroundStyle(BinSightTokens.Color.softInk)
                     }
                 }
                 Spacer()
@@ -86,52 +112,81 @@ struct SettingsView: View {
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .glassSurface(RoundedRectangle(cornerRadius: 16, style: .continuous), variant: .regular)
+        .background(.white, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(BinSightTokens.Color.stroke, lineWidth: 1.5))
     }
 
     private var nameSection: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Display name").font(.headline)
+            DuoSectionHeader(title: "Display name", systemImage: "pencil")
             HStack {
                 TextField("Your name", text: $nameDraft)
                     .textInputAutocapitalization(.words)
                     .autocorrectionDisabled()
                     .padding(.horizontal, 12)
                     .padding(.vertical, 10)
-                    .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 10))
+                    .background(.white, in: RoundedRectangle(cornerRadius: 14))
+                    .overlay(RoundedRectangle(cornerRadius: 14).stroke(BinSightTokens.Color.stroke, lineWidth: 1.5))
                 Button {
                     saveName()
                 } label: {
-                    if savingName { ProgressView() } else { Text("Save").font(.subheadline.weight(.semibold)) }
+                    if savingName { ProgressView() } else { Text("Save") }
                 }
+                .buttonStyle(DuoButtonStyle(kind: .secondary, isCompact: true))
                 .disabled(savingName || nameDraft.trimmingCharacters(in: .whitespaces).isEmpty)
             }
             Text("Shown alongside your scans on the impact map (when we add public profiles).")
-                .font(.caption).foregroundStyle(.secondary)
+                .font(.system(.caption, design: .rounded).weight(.semibold)).foregroundStyle(BinSightTokens.Color.softInk)
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .glassSurface(RoundedRectangle(cornerRadius: 16, style: .continuous), variant: .regular)
+        .background(.white, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(BinSightTokens.Color.stroke, lineWidth: 1.5))
+    }
+
+    private var methodologyLink: some View {
+        NavigationLink {
+            MethodologyView()
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: "function")
+                    .foregroundStyle(BinSightTokens.Color.accent)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Methodology").font(.system(.subheadline, design: .rounded).weight(.heavy))
+                    Text("How CO₂ + sources are measured")
+                        .font(.system(.caption, design: .rounded).weight(.semibold)).foregroundStyle(BinSightTokens.Color.softInk)
+                }
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .imageScale(.small)
+                    .foregroundStyle(.tertiary)
+            }
+            .padding(14)
+            .background(.white, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(BinSightTokens.Color.stroke, lineWidth: 1.5))
+        }
+        .buttonStyle(.plain)
     }
 
     private var backendSection: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("Backend").font(.headline)
+            DuoSectionHeader(title: "Backend", systemImage: "bolt.horizontal.fill")
             HStack(spacing: 8) {
                 Image(systemName: "checkmark.circle.fill")
                     .foregroundStyle(BinSightTokens.Color.recycle)
-                Text("Convex connected").font(.callout)
+                Text("Convex connected").font(.system(.callout, design: .rounded).weight(.heavy))
                 Spacer()
             }
             Text(ConvexService.deploymentUrl)
                 .font(.caption2.monospaced())
-                .foregroundStyle(.secondary)
+                .foregroundStyle(BinSightTokens.Color.softInk)
                 .lineLimit(1)
                 .truncationMode(.middle)
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .glassSurface(RoundedRectangle(cornerRadius: 16, style: .continuous), variant: .regular)
+        .background(.white, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(BinSightTokens.Color.stroke, lineWidth: 1.5))
     }
 
     private var signOutButton: some View {
@@ -139,11 +194,8 @@ struct SettingsView: View {
             Task { await convex.signOut() }
         } label: {
             Text("Sign out")
-                .font(.subheadline.weight(.semibold))
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 12)
         }
-        .glassSurface(RoundedRectangle(cornerRadius: 14, style: .continuous), variant: .regular)
+        .buttonStyle(DuoButtonStyle(kind: .destructive))
     }
 
     private func saveName() {

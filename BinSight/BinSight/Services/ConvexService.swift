@@ -141,6 +141,21 @@ final class ConvexService: ObservableObject {
         try await client.mutation("classifications:remove", with: args)
     }
 
+    /// Triage one detected item — `state` ∈ "confirmed" | "rejected" | "pending".
+    func reviewItem(id: String, itemIndex: Int, state: String) async throws {
+        let args: [String: ConvexEncodable?] = [
+            "id": id,
+            "itemIndex": Double(itemIndex),
+            "state": state,
+        ]
+        try await client.mutation("classifications:reviewItem", with: args)
+    }
+
+    func reviewAll(id: String, state: String) async throws {
+        let args: [String: ConvexEncodable?] = ["id": id, "state": state]
+        try await client.mutation("classifications:reviewAll", with: args)
+    }
+
     func subscribeClassification(id: String) -> AnyPublisher<ClassificationDoc?, ClientError> {
         let args: [String: ConvexEncodable?] = ["id": id]
         return client.subscribe(to: "classifications:getById", with: args, yielding: ClassificationDoc?.self)
@@ -155,6 +170,21 @@ final class ConvexService: ObservableObject {
     func subscribeMetrics() -> AnyPublisher<MetricsDoc?, ClientError> {
         client.subscribe(to: "metrics:summary", yielding: MetricsDoc?.self)
             .eraseToAnyPublisher()
+    }
+
+    func subscribeCityPercentile() -> AnyPublisher<CityPercentileDoc?, ClientError> {
+        client.subscribe(to: "metrics:cityPercentile", yielding: CityPercentileDoc?.self)
+            .eraseToAnyPublisher()
+    }
+
+    func subscribeWeeklyInsight() -> AnyPublisher<WeeklyInsightDoc?, ClientError> {
+        client.subscribe(to: "weeklyInsights:latest", yielding: WeeklyInsightDoc?.self)
+            .eraseToAnyPublisher()
+    }
+
+    func refreshWeeklyInsight(force: Bool = false) async throws {
+        let args: [String: ConvexEncodable?] = ["force": force]
+        let _: WeeklyInsightDoc? = try await client.action("weeklyInsightsAction:refresh", with: args)
     }
 
     func subscribeMap(level: String) -> AnyPublisher<[RegionCellDoc], ClientError> {
