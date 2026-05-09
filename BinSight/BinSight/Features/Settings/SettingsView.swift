@@ -21,6 +21,7 @@ struct SettingsView: View {
                     signOutButton
                 }
                 .padding(20)
+                .padding(.bottom, 130)
             }
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)

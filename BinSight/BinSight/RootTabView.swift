@@ -80,11 +80,11 @@ private struct DuoTabBar: View {
                     RoundedRectangle(cornerRadius: 28, style: .continuous)
                         .fill(.white.opacity(0.70))
                 )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 28, style: .continuous)
+                        .stroke(.white.opacity(0.9), lineWidth: 1.5)
+                )
                 .shadow(color: .black.opacity(0.13), radius: 24, x: 0, y: 10)
-        }
-        .overlay {
-            RoundedRectangle(cornerRadius: 28, style: .continuous)
-                .stroke(.white.opacity(0.9), lineWidth: 1.5)
         }
     }
 
