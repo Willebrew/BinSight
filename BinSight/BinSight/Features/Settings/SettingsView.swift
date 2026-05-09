@@ -2,8 +2,7 @@ import SwiftUI
 
 struct SettingsView: View {
     @State private var clientId: String = ClientIdentity.current
-    @State private var convexURL: String =
-        (Bundle.main.object(forInfoDictionaryKey: "CONVEX_URL") as? String) ?? ""
+    @State private var convexURL: String = ConvexService.deploymentUrl
 
     var body: some View {
         NavigationStack {

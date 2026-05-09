@@ -8,17 +8,21 @@ import ConvexMobile
 final class ConvexService {
     static let shared = ConvexService()
 
+    /// Public Convex deployment URL. Safe to commit — anyone with the URL can
+    /// only call public functions; secrets like PERPLEXITY_API_KEY live as
+    /// server-side env vars on the deployment.
+    static let deploymentUrl = "https://small-gerbil-660.convex.cloud"
+
     let client: ConvexClient
     let clientId: String
 
     private init() {
-        guard
-            let raw = Bundle.main.object(forInfoDictionaryKey: "CONVEX_URL") as? String,
-            let _ = URL(string: raw)
-        else {
-            fatalError("CONVEX_URL missing in Info.plist build settings")
-        }
-        self.client = ConvexClient(deploymentUrl: raw)
+        // Allow Info.plist override (set as a custom string in build settings if you
+        // want to swap deployments without recompiling); fall back to the constant.
+        let url = (Bundle.main.object(forInfoDictionaryKey: "CONVEX_URL") as? String)
+            .flatMap { $0.isEmpty ? nil : $0 }
+            ?? Self.deploymentUrl
+        self.client = ConvexClient(deploymentUrl: url)
         self.clientId = ClientIdentity.current
     }
 
