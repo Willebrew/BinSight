@@ -1,26 +1,21 @@
 import SwiftUI
 
 struct SettingsView: View {
-    @ObservedObject private var store = LocalHistoryStore.shared
-    @State private var showResetConfirm = false
+    @State private var clientId: String = ClientIdentity.current
+    @State private var convexURL: String =
+        (Bundle.main.object(forInfoDictionaryKey: "CONVEX_URL") as? String) ?? ""
 
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     aboutSection
-                    apiSection
-                    dataSection
+                    backendSection
+                    deviceSection
                 }
                 .padding(20)
             }
             .navigationTitle("Settings")
-        }
-        .confirmationDialog("Erase all local history?", isPresented: $showResetConfirm) {
-            Button("Erase", role: .destructive) {
-                LocalHistoryStore.shared.clearAll()
-            }
-            Button("Cancel", role: .cancel) {}
         }
     }
 
@@ -29,7 +24,7 @@ struct SettingsView: View {
             Text("BinSight").font(.headline)
             Text("Snap a photo of any waste item, and BinSight will tell you whether to recycle, compost, trash, or treat it as hazardous.")
                 .font(.callout).foregroundStyle(.secondary)
-            Text("v0.1 — direct Perplexity mode")
+            Text("v0.2 — Convex backend, sonar-pro classifier")
                 .font(.caption2.monospaced()).foregroundStyle(.secondary)
         }
         .padding(14)
@@ -37,14 +32,22 @@ struct SettingsView: View {
         .glassSurface(RoundedRectangle(cornerRadius: 16, style: .continuous), variant: .regular)
     }
 
-    private var apiSection: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("Classification API").font(.headline)
-            HStack {
-                Image(systemName: PerplexityClient.isConfigured ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
-                    .foregroundStyle(PerplexityClient.isConfigured ? BinSightTokens.Color.recycle : BinSightTokens.Color.hazard)
-                Text(PerplexityClient.isConfigured ? "Perplexity API key configured" : "PERPLEXITY_API_KEY missing in Info.plist")
+    private var backendSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Backend").font(.headline)
+            HStack(spacing: 8) {
+                Image(systemName: convexURL.isEmpty ? "exclamationmark.triangle.fill" : "checkmark.circle.fill")
+                    .foregroundStyle(convexURL.isEmpty ? BinSightTokens.Color.hazard : BinSightTokens.Color.recycle)
+                Text(convexURL.isEmpty ? "CONVEX_URL missing" : "Connected")
                     .font(.callout)
+                Spacer()
+            }
+            if !convexURL.isEmpty {
+                Text(convexURL)
+                    .font(.caption2.monospaced())
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
             }
         }
         .padding(14)
@@ -52,17 +55,19 @@ struct SettingsView: View {
         .glassSurface(RoundedRectangle(cornerRadius: 16, style: .continuous), variant: .regular)
     }
 
-    private var dataSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Data").font(.headline)
-            Text("\(store.rows.count) scans saved on this device")
-                .font(.callout).foregroundStyle(.secondary)
-            Button(role: .destructive) {
-                showResetConfirm = true
-            } label: {
-                Text("Erase history").frame(maxWidth: .infinity).padding(.vertical, 10)
-            }
-            .glassSurface(RoundedRectangle(cornerRadius: 14, style: .continuous), variant: .clear)
+    private var deviceSection: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Device").font(.headline)
+            Text("Client ID")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+            Text(clientId)
+                .font(.caption2.monospaced())
+                .lineLimit(1)
+                .truncationMode(.middle)
+            Text("This ID identifies your scans on the backend until proper accounts are added.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)

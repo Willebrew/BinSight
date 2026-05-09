@@ -9,33 +9,32 @@ final class CaptureFlow: ObservableObject {
     @Published private(set) var isWorking = false
     @Published private(set) var lastError: String?
 
+    /// Uploads the JPEG to Convex storage, creates a pending classification
+    /// row, and kicks off the classifyWaste action. Returns the row id; the
+    /// caller subscribes to it via `ConvexService.subscribeClassification`.
     func classify(jpeg: Data, lat: Double?, lng: Double?) async throws -> String {
         isWorking = true
         defer { isWorking = false }
         lastError = nil
 
-        let imageURL = LocalHistoryStore.shared.storeImage(jpeg)
-        let pending = LocalHistoryStore.shared.insertPending(imageURL: imageURL, lat: lat, lng: lng)
+        let storageId = try await ConvexService.shared.upload(image: jpeg)
+        let geohash5: String? = (lat != nil && lng != nil)
+            ? Geohash.encode(latitude: lat!, longitude: lng!, precision: 5)
+            : nil
+        let id = try await ConvexService.shared.createClassification(
+            storageId: storageId, lat: lat, lng: lng, geohash5: geohash5
+        )
 
-        Task {
-            do {
-                let result = try await PerplexityClient.classify(jpeg: jpeg, lat: lat, lng: lng)
-                LocalHistoryStore.shared.update(pending._id) { doc in
-                    doc.status = "done"
-                    doc.items = result.items
-                    doc.localRules = result.localRules
-                    doc.citations = result.citations
-                    doc.model = result.model
-                    doc.verified = false
-                }
-            } catch {
-                LocalHistoryStore.shared.update(pending._id) { doc in
-                    doc.status = "error"
-                    doc.errorMessage = error.localizedDescription
-                }
-            }
+        Task { try? await runWithRetry(id: id) }
+        return id
+    }
+
+    private func runWithRetry(id: String) async throws {
+        do {
+            try await ConvexService.shared.runClassifyAction(id: id)
+        } catch {
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
+            try await ConvexService.shared.runClassifyAction(id: id)
         }
-
-        return pending._id
     }
 }

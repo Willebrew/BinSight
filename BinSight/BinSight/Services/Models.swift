@@ -1,22 +1,5 @@
 import Foundation
 
-struct ProfileDoc: Codable, Identifiable, Hashable {
-    var _id: String
-    var authUserId: String
-    var email: String?
-    var name: String?
-    var handle: String?
-    var phoneHash: String?
-    var privacy: Privacy
-    var createdAt: Double
-    var id: String { _id }
-
-    struct Privacy: Codable, Hashable {
-        var mapOptIn: Bool
-        var contactsOptIn: Bool
-    }
-}
-
 struct ItemDoc: Codable, Hashable, Identifiable {
     var label: String
     var material: String
@@ -29,9 +12,8 @@ struct ItemDoc: Codable, Hashable, Identifiable {
 
 struct ClassificationDoc: Codable, Identifiable, Hashable {
     var _id: String
-    var authUserId: String
+    var clientId: String
     var storageId: String
-    var thumbStorageId: String?
     var capturedAt: Double
     var lat: Double?
     var lng: Double?
@@ -60,37 +42,6 @@ struct MetricsDoc: Codable, Hashable {
         var recycled: Int
         var trashed: Int
     }
-}
-
-struct FriendDoc: Codable, Identifiable, Hashable {
-    var friendshipId: String
-    var status: String
-    var requestedBy: String
-    var other: Other
-    var id: String { friendshipId }
-    struct Other: Codable, Hashable {
-        var authUserId: String
-        var name: String?
-        var handle: String?
-    }
-}
-
-struct FriendMatch: Codable, Hashable, Identifiable {
-    var profileId: String
-    var authUserId: String
-    var name: String?
-    var handle: String?
-    var id: String { profileId }
-}
-
-struct LeaderboardRow: Codable, Hashable, Identifiable {
-    var authUserId: String
-    var name: String?
-    var handle: String?
-    var kgRecycled: Double
-    var count: Int
-    var accuracy: Double
-    var id: String { authUserId }
 }
 
 struct MapCellDoc: Codable, Hashable, Identifiable {

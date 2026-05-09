@@ -6,6 +6,10 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		97AC97021000000000DCBB8E /* ConvexMobile in Frameworks */ = {isa = PBXBuildFile; productRef = 97AC97011000000000DCBB8E /* ConvexMobile */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXFileReference section */
 		97AC963A2FAFB59B00DCBB8E /* BinSight.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = BinSight.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -23,6 +27,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				97AC97021000000000DCBB8E /* ConvexMobile in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -65,6 +70,7 @@
 			);
 			name = BinSight;
 			packageProductDependencies = (
+				97AC97011000000000DCBB8E /* ConvexMobile */,
 			);
 			productName = BinSight;
 			productReference = 97AC963A2FAFB59B00DCBB8E /* BinSight.app */;
@@ -94,6 +100,9 @@
 			);
 			mainGroup = 97AC96312FAFB59B00DCBB8E;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				97AC97001000000000DCBB8E /* XCRemoteSwiftPackageReference "convex-swift" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 97AC963B2FAFB59B00DCBB8E /* Products */;
 			projectDirPath = "";
@@ -256,9 +265,9 @@
 				DEVELOPMENT_TEAM = 9972ZZH3LW;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CONVEX_URL = "https://small-gerbil-660.convex.cloud";
 				INFOPLIST_KEY_NSCameraUsageDescription = "BinSight uses the camera to scan waste items so it can tell you whether to recycle, compost, trash, or treat them as hazardous.";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Used so BinSight can surface the recycling rules in effect where you are.";
-				INFOPLIST_KEY_PERPLEXITY_API_KEY = "$(PERPLEXITY_API_KEY)";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -291,9 +300,9 @@
 				DEVELOPMENT_TEAM = 9972ZZH3LW;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CONVEX_URL = "https://small-gerbil-660.convex.cloud";
 				INFOPLIST_KEY_NSCameraUsageDescription = "BinSight uses the camera to scan waste items so it can tell you whether to recycle, compost, trash, or treat them as hazardous.";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Used so BinSight can surface the recycling rules in effect where you are.";
-				INFOPLIST_KEY_PERPLEXITY_API_KEY = "$(PERPLEXITY_API_KEY)";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -338,6 +347,25 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		97AC97001000000000DCBB8E /* XCRemoteSwiftPackageReference "convex-swift" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/get-convex/convex-swift";
+			requirement = {
+				kind = exactVersion;
+				version = 0.8.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		97AC97011000000000DCBB8E /* ConvexMobile */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 97AC97001000000000DCBB8E /* XCRemoteSwiftPackageReference "convex-swift" */;
+			productName = ConvexMobile;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 97AC96322FAFB59B00DCBB8E /* Project object */;
 }

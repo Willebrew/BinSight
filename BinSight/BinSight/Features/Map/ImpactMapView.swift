@@ -2,12 +2,11 @@ import SwiftUI
 import MapKit
 import Combine
 
-/// Local impact map (v0). Shows the user's own classifications pinned at the
-/// coordinates captured at scan time. Annotation color reflects the dominant
-/// decision for that scan. No backend / friend data yet — when the Convex
-/// path lands we'll layer in anonymized geohash5 cells from `convex/map.ts`.
+/// Impact map. v0 reads the user's own scans from Convex (real-time) and pins
+/// them at the captured coordinates, colored by decision.
 struct ImpactMapView: View {
-    @ObservedObject private var store = LocalHistoryStore.shared
+    @State private var rows: [ClassificationDoc] = []
+    @State private var subscription: AnyCancellable?
     @StateObject private var location = LocationProvider()
     @State private var selectedId: String?
     @State private var cameraPosition: MapCameraPosition = .automatic
@@ -35,7 +34,7 @@ struct ImpactMapView: View {
         .safeAreaInset(edge: .bottom) {
             if pinnedRows.isEmpty {
                 emptyHint.padding(.horizontal, 16).padding(.bottom, 110)
-            } else if let id = selectedId, let row = store.find(id) {
+            } else if let id = selectedId, let row = rows.first(where: { $0._id == id }) {
                 selectedCard(row).padding(.horizontal, 16).padding(.bottom, 110)
             } else {
                 Spacer().frame(height: 90)
@@ -43,12 +42,11 @@ struct ImpactMapView: View {
         }
         .onAppear {
             location.start()
-            if let last = location.last {
-                cameraPosition = .region(MKCoordinateRegion(center: last.coordinate,
-                                                            latitudinalMeters: 1500,
-                                                            longitudinalMeters: 1500))
-            }
+            subscription = ConvexService.shared.subscribeHistory()
+                .receive(on: DispatchQueue.main)
+                .sink(receiveCompletion: { _ in }, receiveValue: { rows = $0 })
         }
+        .onDisappear { subscription?.cancel() }
         .onReceive(location.$last.compactMap { $0 }) { loc in
             guard pinnedRows.isEmpty else { return }
             cameraPosition = .region(MKCoordinateRegion(center: loc.coordinate,
@@ -58,7 +56,7 @@ struct ImpactMapView: View {
     }
 
     private var pinnedRows: [ClassificationDoc] {
-        store.rows.filter { $0.lat != nil && $0.lng != nil && $0.status == "done" }
+        rows.filter { $0.lat != nil && $0.lng != nil && $0.status == "done" }
     }
 
     private func coordinate(of row: ClassificationDoc) -> CLLocationCoordinate2D? {

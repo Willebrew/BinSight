@@ -1,20 +1,22 @@
 import SwiftUI
+import Combine
 
 struct HistoryView: View {
-    @ObservedObject private var store = LocalHistoryStore.shared
+    @State private var rows: [ClassificationDoc] = []
     @State private var openId: String?
+    @State private var subscription: AnyCancellable?
 
     var body: some View {
         ScrollView {
             LazyVStack(spacing: 12) {
-                if store.rows.isEmpty {
+                if rows.isEmpty {
                     Text("No scans yet — tap the shutter on the camera tab to get started.")
                         .font(.callout)
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
                         .padding(40)
                 }
-                ForEach(store.rows) { row in
+                ForEach(rows) { row in
                     Button { openId = row._id } label: { HistoryRow(doc: row) }
                         .buttonStyle(.plain)
                 }
@@ -22,6 +24,12 @@ struct HistoryView: View {
             .padding(20)
         }
         .navigationTitle("History")
+        .onAppear {
+            subscription = ConvexService.shared.subscribeHistory()
+                .receive(on: DispatchQueue.main)
+                .sink(receiveCompletion: { _ in }, receiveValue: { rows = $0 })
+        }
+        .onDisappear { subscription?.cancel() }
         .sheet(item: Binding(
             get: { openId.map { Identified(value: $0) } },
             set: { openId = $0?.value }

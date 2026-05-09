@@ -1,8 +1,11 @@
 import SwiftUI
 import Charts
+import Combine
 
 struct DashboardView: View {
-    @ObservedObject private var store = LocalHistoryStore.shared
+    @State private var metrics: MetricsDoc?
+    @State private var rows: [ClassificationDoc] = []
+    @State private var bag: Set<AnyCancellable> = []
 
     var body: some View {
         NavigationStack {
@@ -10,7 +13,7 @@ struct DashboardView: View {
                 VStack(alignment: .leading, spacing: 18) {
                     hero
                     summaryRow
-                    if doneRows.isEmpty {
+                    if (metrics?.totalScans ?? 0) == 0 {
                         emptyState
                     } else {
                         recentRow
@@ -25,42 +28,21 @@ struct DashboardView: View {
             .background(backdrop.ignoresSafeArea())
             .navigationTitle("Dashboard")
         }
-    }
-
-    // MARK: - Derived
-
-    private var doneRows: [ClassificationDoc] { store.rows.filter { $0.status == "done" } }
-
-    private var totals: (scans: Int, recycled: Int, trashed: Int, co2: Double) {
-        var co2 = 0.0; var rec = 0; var tra = 0
-        for r in doneRows {
-            for it in r.items {
-                co2 += it.co2Kg
-                if it.decision == "recycle" || it.decision == "compost" { rec += 1 } else { tra += 1 }
-            }
+        .onAppear {
+            ConvexService.shared.subscribeMetrics()
+                .receive(on: DispatchQueue.main)
+                .sink(receiveCompletion: { _ in }, receiveValue: { metrics = $0 })
+                .store(in: &bag)
+            ConvexService.shared.subscribeHistory()
+                .receive(on: DispatchQueue.main)
+                .sink(receiveCompletion: { _ in }, receiveValue: { rows = $0.filter { $0.status == "done" } })
+                .store(in: &bag)
         }
-        return (doneRows.count, rec, tra, co2)
+        .onDisappear { bag.forEach { $0.cancel() }; bag.removeAll() }
     }
-
-    private var streakDays: Int {
-        let cal = Calendar.current
-        let days = Set(doneRows.map {
-            cal.startOfDay(for: Date(timeIntervalSince1970: $0.capturedAt / 1000))
-        })
-        var streak = 0
-        var cursor = cal.startOfDay(for: Date())
-        while days.contains(cursor) {
-            streak += 1
-            guard let prev = cal.date(byAdding: .day, value: -1, to: cursor) else { break }
-            cursor = prev
-        }
-        return streak
-    }
-
-    // MARK: - Hero
 
     private var hero: some View {
-        let t = totals
+        let m = metrics
         return ZStack(alignment: .topLeading) {
             heroGradient
             VStack(alignment: .leading, spacing: 14) {
@@ -73,7 +55,7 @@ struct DashboardView: View {
                     Image(systemName: "leaf.fill").foregroundStyle(.white.opacity(0.85))
                 }
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    Text(String(format: "%.2f", t.co2))
+                    Text(String(format: "%.2f", m?.totalCo2Kg ?? 0))
                         .font(.system(size: 56, weight: .heavy, design: .rounded))
                         .foregroundStyle(.white)
                     Text("kg")
@@ -82,8 +64,8 @@ struct DashboardView: View {
                 }
                 HStack(spacing: 10) {
                     heroChip(icon: "flame.fill", value: "\(streakDays)d", label: "streak")
-                    heroChip(icon: "checkmark.seal.fill", value: "\(t.recycled)", label: "recycled")
-                    heroChip(icon: "trash.fill", value: "\(t.trashed)", label: "trash")
+                    heroChip(icon: "checkmark.seal.fill", value: "\(m?.totalRecycled ?? 0)", label: "recycled")
+                    heroChip(icon: "trash.fill", value: "\(m?.totalTrashed ?? 0)", label: "trash")
                 }
             }
             .padding(20)
@@ -114,23 +96,12 @@ struct DashboardView: View {
         .background(.white.opacity(0.18), in: Capsule())
     }
 
-    // MARK: - Summary tiles
-
     private var summaryRow: some View {
-        let t = totals
+        let m = metrics
         return HStack(spacing: 12) {
-            statTile(
-                value: "\(t.scans)", label: "Scans",
-                system: "camera.fill", tint: BinSightTokens.Color.accent
-            )
-            statTile(
-                value: "\(t.recycled)", label: "Recycled",
-                system: "leaf.fill", tint: BinSightTokens.Color.recycle
-            )
-            statTile(
-                value: "\(t.trashed)", label: "Trash",
-                system: "trash.fill", tint: BinSightTokens.Color.trash
-            )
+            statTile(value: "\(m?.totalScans ?? 0)", label: "Scans", system: "camera.fill", tint: BinSightTokens.Color.accent)
+            statTile(value: "\(m?.totalRecycled ?? 0)", label: "Recycled", system: "leaf.fill", tint: BinSightTokens.Color.recycle)
+            statTile(value: "\(m?.totalTrashed ?? 0)", label: "Trash", system: "trash.fill", tint: BinSightTokens.Color.trash)
         }
     }
 
@@ -148,8 +119,6 @@ struct DashboardView: View {
         .glassSurface(RoundedRectangle(cornerRadius: 20, style: .continuous), variant: .regular)
     }
 
-    // MARK: - Empty state
-
     private var emptyState: some View {
         VStack(spacing: 14) {
             Image(systemName: "leaf.circle.fill")
@@ -166,8 +135,6 @@ struct DashboardView: View {
         .glassSurface(RoundedRectangle(cornerRadius: 24, style: .continuous), variant: .regular)
     }
 
-    // MARK: - Recent scans
-
     private var recentRow: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
@@ -179,7 +146,7 @@ struct DashboardView: View {
             }
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 12) {
-                    ForEach(doneRows.prefix(8)) { row in
+                    ForEach(rows.prefix(8)) { row in
                         NavigationLink {
                             ResultCardView(classificationId: row._id)
                         } label: {
@@ -192,16 +159,13 @@ struct DashboardView: View {
         }
     }
 
-    // MARK: - Charts
-
     @ViewBuilder
     private var materialsChart: some View {
-        let counts = materialCounts
-        if !counts.isEmpty {
+        if let m = metrics, !m.byMaterial.isEmpty {
             VStack(alignment: .leading, spacing: 8) {
                 Text("Materials").font(.headline)
                 Chart {
-                    ForEach(counts.sorted(by: { $0.value > $1.value }), id: \.key) { kv in
+                    ForEach(m.byMaterial.sorted(by: { $0.value > $1.value }), id: \.key) { kv in
                         SectorMark(angle: .value("Count", kv.value), innerRadius: .ratio(0.6))
                             .foregroundStyle(by: .value("Material", kv.key))
                     }
@@ -215,12 +179,11 @@ struct DashboardView: View {
 
     @ViewBuilder
     private var weeklyChart: some View {
-        let byDay = dailyCounts
-        if !byDay.isEmpty {
+        if let m = metrics, !m.byDay.isEmpty {
             VStack(alignment: .leading, spacing: 8) {
                 Text("Last 7 days").font(.headline)
                 Chart {
-                    ForEach(byDay.sorted(by: { $0.key < $1.key }), id: \.key) { kv in
+                    ForEach(m.byDay.sorted(by: { $0.key < $1.key }), id: \.key) { kv in
                         BarMark(x: .value("Day", String(kv.key.suffix(5))), y: .value("Recycled", kv.value.recycled))
                             .foregroundStyle(BinSightTokens.Color.recycle)
                         BarMark(x: .value("Day", String(kv.key.suffix(5))), y: .value("Trash", kv.value.trashed))
@@ -234,36 +197,24 @@ struct DashboardView: View {
         }
     }
 
-    private var materialCounts: [String: Int] {
-        var out: [String: Int] = [:]
-        for row in doneRows {
-            for item in row.items { out[item.material, default: 0] += 1 }
+    private var streakDays: Int {
+        let cal = Calendar.current
+        let days = Set(rows.map {
+            cal.startOfDay(for: Date(timeIntervalSince1970: $0.capturedAt / 1000))
+        })
+        var streak = 0
+        var cursor = cal.startOfDay(for: Date())
+        while days.contains(cursor) {
+            streak += 1
+            guard let prev = cal.date(byAdding: .day, value: -1, to: cursor) else { break }
+            cursor = prev
         }
-        return out
+        return streak
     }
-
-    private var dailyCounts: [String: (recycled: Int, trashed: Int)] {
-        var out: [String: (Int, Int)] = [:]
-        let formatter = ISO8601DateFormatter(); formatter.formatOptions = [.withFullDate]
-        for row in doneRows {
-            let day = formatter.string(from: Date(timeIntervalSince1970: row.capturedAt / 1000))
-            var t = out[day] ?? (0, 0)
-            for item in row.items {
-                if item.decision == "recycle" || item.decision == "compost" { t.0 += 1 } else { t.1 += 1 }
-            }
-            out[day] = t
-        }
-        return out.mapValues { ($0.0, $0.1) }
-    }
-
-    // MARK: - Background
 
     private var backdrop: some View {
         LinearGradient(
-            colors: [
-                Color(.systemGroupedBackground),
-                Color(.systemBackground),
-            ],
+            colors: [Color(.systemGroupedBackground), Color(.systemBackground)],
             startPoint: .top, endPoint: .bottom
         )
     }
