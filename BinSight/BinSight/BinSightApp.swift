@@ -10,6 +10,7 @@ struct BinSightApp: App {
             content
                 .environmentObject(convex)
                 .task { await convex.bootstrap() }
+                .preferredColorScheme(.light)
         }
     }
 
