@@ -140,13 +140,15 @@ struct CameraScreen: View {
                     .stroke(.white.opacity(0.42), lineWidth: 2)
                     .frame(width: size * 0.55, height: size * 0.55)
 
-                VStack(spacing: 8) {
-                    Spacer()
-                    DuoBadge(text: flow.isWorking ? "Working…" : "Center the item",
-                             systemImage: flow.isWorking ? "sparkles" : "scope",
-                             color: flow.isWorking ? BinSightTokens.Color.accent : BinSightTokens.Color.recycle,
-                             filled: true)
-                        .padding(.bottom, 188)
+                if !flow.isWorking {
+                    VStack(spacing: 8) {
+                        Spacer()
+                        DuoBadge(text: "Center the item",
+                                 systemImage: "scope",
+                                 color: BinSightTokens.Color.recycle,
+                                 filled: true)
+                            .padding(.bottom, 188)
+                    }
                 }
             }
             .frame(width: geo.size.width, height: geo.size.height)
