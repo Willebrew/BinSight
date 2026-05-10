@@ -3,7 +3,13 @@
 import { v } from "convex/values";
 import { action } from "./_generated/server";
 import { internal, api } from "./_generated/api";
-import { classifyImage, verifyTopItem, lookupItemMass, type RawSource } from "./sage";
+import {
+  classifyImage,
+  verifyTopItem,
+  lookupItemMass,
+  lookupLocalRules,
+  type RawSource,
+} from "./sage";
 import { estimateCo2 } from "./impactTable";
 
 type StoredSource = {
@@ -205,24 +211,71 @@ export const run = action({
         verified: false,
       });
 
-      // 4. In parallel: verify the decisions AND ground each item's mass
-      //    in a real product-spec source. The mass lookup re-anchors the
-      //    CO2 number so we don't ship a hallucinated weight; the
-      //    verification call sets the verified badge. Both run
-      //    concurrently so latency is max(verify, mass), not sum.
+      // 4. After vision, run two grounding streams in parallel — exactly
+      //    the flow the user described:
+      //      a) location-aware recycling/trash rules via Search API
+      //      b) per-item material/size/weight specs via Search API
+      //    Both come back as sources (with kind="rule" and kind="material")
+      //    that we attach to the items so the UI can show every fact's
+      //    provenance. Verification piggybacks on the same Promise.all
+      //    so it doesn't extend latency.
       if (items.length > 0) {
         const topN = Math.min(items.length, 3);
         const slice = agent.items.slice(0, topN);
-        const [verifyResults, massResults] = await Promise.all([
+        const distinctMaterials = Array.from(
+          new Set(items.map((i) => i.material).filter(Boolean)),
+        );
+        const [verifyResults, massResults, localRulesResult] = await Promise.all([
           Promise.all(slice.map((it) => verifyTopItem(it).catch(() => false))),
           Promise.all(slice.map((it) => lookupItemMass(it).catch(() => undefined))),
+          lookupLocalRules(row.city ?? undefined, row.state ?? undefined, distinctMaterials).catch(
+            () => ({ summary: "", sources: [] as RawSource[] }),
+          ),
         ]);
         const verified = verifyResults.some(Boolean);
+
+        // Merge in local-rule sources. Each rule source supports every
+        // item (the rules apply to the whole scan).
+        let updated = false;
+        for (const rs of localRulesResult.sources) {
+          const existingIdx = ranked.findIndex((s) => s.url === rs.url);
+          if (existingIdx >= 0) {
+            // Already present — at minimum mark it as supporting all items.
+            for (let i = 0; i < items.length; i++) {
+              if (!ranked[existingIdx].supportsItemIndices.includes(i)) {
+                ranked[existingIdx].supportsItemIndices.push(i);
+              }
+            }
+            continue;
+          }
+          updated = true;
+          const newIdx = ranked.length;
+          ranked.push({
+            url: rs.url,
+            title: rs.title || hostOf(rs.url),
+            publisher: rs.publisher || hostOf(rs.url),
+            snippet: rs.snippet || "",
+            tier: tierFor(rs.url),
+            kind: "rule",
+            isLocal: isLocalSource(rs.url, row.city ?? undefined, row.state ?? undefined),
+            supportsItemIndices: items.map((_, i) => i),
+          });
+          items.forEach((item) => {
+            if (!item.sourceIndices.includes(newIdx)) item.sourceIndices.push(newIdx);
+          });
+        }
+
+        // Replace localRules summary if the search produced a fresher
+        // location-tagged paraphrase.
+        let localRulesSummary = agent.localRules;
+        if (localRulesResult.summary) {
+          localRulesSummary = localRulesResult.summary;
+          updated = true;
+        }
 
         // Apply mass-grounding results: re-run estimateCo2 with the
         // verified mass, attach the source as kind="material", link from
         // the item via sourceIndices.
-        let updated = false;
         massResults.forEach((mass, i) => {
           if (!mass) return;
           updated = true;
@@ -266,7 +319,7 @@ export const run = action({
             id,
             items,
             sources: ranked,
-            localRules: agent.localRules,
+            localRules: localRulesSummary,
             citations: agent.citations,
             model: agent.model,
             verified,

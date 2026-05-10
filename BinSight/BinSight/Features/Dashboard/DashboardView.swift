@@ -375,7 +375,7 @@ struct DashboardView: View {
         if let i = insight {
             VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 6) {
-                    Image(systemName: "sparkles")
+                    Image(systemName: "calendar.badge.clock")
                         .foregroundStyle(BinSightTokens.Color.accent)
                     Text("This week").font(.caption.weight(.semibold))
                         .foregroundStyle(.secondary)

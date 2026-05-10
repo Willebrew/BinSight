@@ -2,18 +2,24 @@
 
 // Perplexity classifier for BinSight.
 //
-// Single-pass /chat/completions with sonar-pro: web search is built into the
-// model, citations come back at the top level, and it accepts vision inputs
-// in OpenAI-style `image_url` format. We push as much structured signal as
-// possible into the JSON schema so we don't need a second round-trip:
+// Uses Claude Opus 4.7 via Perplexity Agent API for vision classification,
+// with separate Perplexity Search API calls for web research. Search results
+// are injected into the prompt to provide context for local recycling rules.
 //   • per-item mass estimates (grams)
 //   • per-item source attribution (which URL backs which decision)
 //   • per-item disposal-rule citations preferred from the user's own city
 //
 // Env: PERPLEXITY_API_KEY  (set via `npx convex env set PERPLEXITY_API_KEY ...`)
-//      PERPLEXITY_MODEL    (optional override; default "sonar-pro")
+//      PERPLEXITY_MODEL    (optional override; default "anthropic/claude-opus-4-7")
+//
+// Available models via Perplexity Agent API:
+// - anthropic/claude-opus-4-7 (default)
+// - anthropic/claude-sonnet-4-6
+// - openai/gpt-5.4
+// - google/gemini-3.1-pro-preview
+// - See https://docs.perplexity.ai/docs/agent-api/models for full list
 
-const CHAT_URL = "https://api.perplexity.ai/chat/completions";
+const AGENT_URL = "https://api.perplexity.ai/v1/agent";
 const SEARCH_URL = "https://api.perplexity.ai/search";
 
 export type RawSource = {
@@ -135,24 +141,164 @@ const wasteSchema = {
   },
 };
 
-function systemPrompt(lat?: number, lng?: number, city?: string, state?: string): string {
+/**
+ * Search the web for local recycling rules and return them as RawSources
+ * (kind="rule"). Designed to run in parallel with item-spec lookups
+ * after the vision pass identifies what materials are present.
+ */
+export async function lookupLocalRules(
+  city?: string,
+  state?: string,
+  materials?: string[],
+): Promise<{ summary: string; sources: RawSource[] }> {
+  const apiKey = process.env.PERPLEXITY_API_KEY;
+  if (!apiKey) return { summary: "", sources: [] };
+  const where = [city, state].filter(Boolean).join(", ");
+  if (!where) return { summary: "", sources: [] };
+
+  const distinctMaterials = Array.from(
+    new Set((materials ?? []).map((m) => m.toLowerCase()).filter(Boolean)),
+  ).slice(0, 4);
+  const materialList = distinctMaterials.join(", ") || "household waste";
+
+  const queries = [
+    `${where} curbside recycling rules ${materialList}`,
+    `${where} how to dispose of ${materialList}`,
+  ];
+
+  try {
+    const all = await Promise.all(
+      queries.map(async (query) => {
+        const res = await fetch(SEARCH_URL, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            query,
+            max_results: 4,
+            max_tokens_per_page: 2048,
+            country: state ? "US" : undefined,
+          }),
+        });
+        if (!res.ok) return [] as RawSource[];
+        const json: any = await res.json();
+        const results: any[] = Array.isArray(json?.results) ? json.results : [];
+        return results
+          .filter((r) => typeof r?.url === "string")
+          .map((r) => ({
+            url: r.url as string,
+            title: r.title,
+            publisher: r.publisher ?? hostFor(r.url),
+            snippet: typeof r.snippet === "string" ? r.snippet.slice(0, 480) : "",
+            kind: "rule",
+          })) as RawSource[];
+      }),
+    );
+
+    const flat = all.flat();
+    // Dedup by URL, prefer official-tier hosts.
+    const byUrl = new Map<string, RawSource>();
+    for (const s of flat) {
+      if (!byUrl.has(s.url)) byUrl.set(s.url, s);
+    }
+    const sources = Array.from(byUrl.values()).slice(0, 6);
+    const summary = sources
+      .slice(0, 2)
+      .map((s) => `${s.publisher}: ${(s.snippet || "").trim().slice(0, 200)}`)
+      .filter((line) => line.length > 0)
+      .join(" — ");
+    return { summary, sources };
+  } catch {
+    return { summary: "", sources: [] };
+  }
+}
+
+/**
+ * Legacy helper kept so existing call sites keep building. Wraps the
+ * structured `lookupLocalRules` and returns just the summary string.
+ */
+async function searchLocalRecyclingRules(
+  city?: string,
+  state?: string,
+  materials?: string[]
+): Promise<string> {
+  const apiKey = process.env.PERPLEXITY_API_KEY;
+  if (!apiKey) return "";
+
+  const location = [city, state].filter(Boolean).join(", ");
+  const materialList = materials?.slice(0, 3).join(", ") || "waste items";
+
+  const queries = [
+    `${location} recycling rules ${materialList}`,
+    `${location} waste disposal guidelines`,
+    `${state} recycling requirements ${materialList}`,
+  ];
+
+  try {
+    const searchPromises = queries.map(async (query) => {
+      const res = await fetch(SEARCH_URL, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          query,
+          max_results: 3,
+          max_tokens_per_page: 2048,
+        }),
+      });
+
+      if (!res.ok) return "";
+      const json: any = await res.json();
+      const results: any[] = Array.isArray(json?.results) ? json.results : [];
+
+      return results
+        .map(
+          (r) =>
+            `• ${r.title}\n  ${r.snippet?.slice(0, 300) || ""}\n  Source: ${r.url}`
+        )
+        .join("\n");
+    });
+
+    const searchResults = await Promise.all(searchPromises);
+    return searchResults.filter(Boolean).join("\n\n");
+  } catch {
+    return "";
+  }
+}
+
+function systemPrompt(
+  lat?: number,
+  lng?: number,
+  city?: string,
+  state?: string,
+  searchContext?: string
+): string {
   const where = [city, state].filter(Boolean).join(", ");
   const loc = where
     ? `User location: ${where}${lat !== undefined && lng !== undefined ? ` (${lat.toFixed(3)}, ${lng.toFixed(3)})` : ""}.`
     : lat !== undefined && lng !== undefined
       ? `User location: ${lat.toFixed(3)}, ${lng.toFixed(3)}.`
       : "Location unknown.";
+  const searchSection = searchContext
+    ? `\n\nLOCAL RECYCLING RESEARCH:\n${searchContext}\n\nUse this research to inform your disposal decisions, but always verify with the sources you cite.`
+    : "";
+
   return [
     "You are BinSight, an expert in municipal waste classification.",
     "Identify every distinct waste item visible in the photo.",
     "For each item, decide whether it should be recycled, composted, trashed, or treated as hazardous, given the user's location.",
     "Estimate each item's mass in grams from visual cues; if you genuinely cannot tell, return 0 (we'll fall back to a default).",
-    "Search the web when local recycling rules might change the answer (plastic film, glass, batteries, soiled paper, etc.).",
     "Be conservative: if a container is contaminated with food and the local program rejects contaminated items, mark as trash.",
     "When sourcing, prefer official municipal pages (e.g. 'sfenvironment.org', 'nyc.gov/sanitation') and .gov / EPA over blogs or forums.",
     "For EACH item, include sources of BOTH kinds when possible: (a) material/object identification (manufacturer site, Wikipedia, product spec) tagged with kind='material', and (b) local disposal rule (municipal program, EPA) tagged with kind='rule'. Use kind='both' if a single source covers both.",
     "Every item MUST point to at least one entry in the `sources` array via `sourceIndices`. Sources should be distinct (don't list the same URL twice).",
+    "Do not use em-dashes (—) in disposalNotes or any text fields. Use hyphens (-) or rephrase instead.",
     loc,
+    searchSection,
   ].join(" ");
 }
 
@@ -169,8 +315,11 @@ export async function classifyImage(
   if (!apiKey) {
     throw new Error("PERPLEXITY_API_KEY is not set on this Convex deployment");
   }
-  const model = process.env.PERPLEXITY_MODEL ?? "sonar-pro";
+  const model = process.env.PERPLEXITY_MODEL ?? "anthropic/claude-opus-4-7";
 
+  // No pre-call research — research happens AFTER the vision pass via the
+  // parallel Search API calls in classifyWaste. Skipping the pre-search
+  // here cuts ~2s off the user-visible latency of the first paint.
   const base64 = arrayBufferToBase64(imageBytes);
   const dataUrl = `data:${contentType || "image/jpeg"};base64,${base64}`;
 
@@ -180,7 +329,10 @@ export async function classifyImage(
     model,
     response_format: { type: "json_schema", json_schema: wasteSchema },
     messages: [
-      { role: "system", content: systemPrompt(lat, lng, city, state) },
+      {
+        role: "system",
+        content: systemPrompt(lat, lng, city, state),
+      },
       {
         role: "user",
         content: [
@@ -192,7 +344,7 @@ export async function classifyImage(
   };
   if (useStreaming) body.stream = true;
 
-  const res = await fetch(CHAT_URL, {
+  const res = await fetch(AGENT_URL, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${apiKey}`,
@@ -207,7 +359,15 @@ export async function classifyImage(
 
   if (!useStreaming) {
     const json: any = await res.json();
-    const parsed = extractStructured(json);
+    // Agent API returns structured data in output_text when using response_format
+    const content = json.output_text || json.choices?.[0]?.message?.content || JSON.stringify(json);
+    let parsed: any;
+    try {
+      parsed = JSON.parse(content);
+    } catch {
+      // Fallback: try to extract JSON from the response
+      parsed = extractStructured(json);
+    }
     const flatCitations: string[] = Array.isArray(json.citations) ? json.citations : [];
     return {
       items: parsed.items ?? [],
@@ -480,16 +640,65 @@ export async function generateWeeklyInsight(input: {
   if (!apiKey) {
     return { headline: "Keep scanning!", body: "Sign in and add a Perplexity key to unlock weekly insights.", sources: [] };
   }
-  const model = process.env.PERPLEXITY_MODEL ?? "sonar-pro";
+  const model = process.env.PERPLEXITY_MODEL ?? "anthropic/claude-opus-4-7";
   const where = [input.city, input.state].filter(Boolean).join(", ");
   const topList = input.topMaterials
     .slice(0, 4)
     .map((m) => `${m.material}×${m.count}`)
     .join(", ");
 
+  // Search for sustainability tips relevant to user's location and materials
+  let searchContext = "";
+  if (input.topMaterials.length > 0) {
+    const materialNames = input.topMaterials.slice(0, 2).map((m) => m.material).join(", ");
+    const searchQueries = [
+      `${where} recycling tips ${materialNames}`,
+      `${where} waste reduction best practices`,
+      "sustainable recycling habits 2024",
+    ];
+
+    try {
+      const searchPromises = searchQueries.map(async (query) => {
+        const res = await fetch(SEARCH_URL, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            query,
+            max_results: 2,
+            max_tokens_per_page: 1024,
+          }),
+        });
+
+        if (!res.ok) return "";
+        const json: any = await res.json();
+        const results: any[] = Array.isArray(json?.results) ? json.results : [];
+
+        return results
+          .map(
+            (r) =>
+              `• ${r.title}\n  ${r.snippet?.slice(0, 200) || ""}\n  Source: ${r.url}`
+          )
+          .join("\n");
+      });
+
+      const searchResults = await Promise.all(searchPromises);
+      searchContext = searchResults.filter(Boolean).join("\n\n");
+    } catch {
+      // Continue without search context if it fails
+    }
+  }
+
+  const searchSection = searchContext
+    ? `\n\nSUSTAINABILITY RESEARCH:\n${searchContext}\n\nUse this research to inform your tip, but always cite your sources.`
+    : "";
+
   const sys = [
     "You are BinSight, writing a 1-sentence weekly insight for a user.",
     "Tone: warm, specific, evidence-based. Cite at least one official source (.gov / EPA / municipal).",
+    "Do not use em-dashes (—) in your response. Use hyphens (-) or rephrase instead.",
     "Output JSON: { headline: string (max 60 chars), body: string (1-2 sentences, max 240 chars), sources: array of {url, title, publisher, snippet} }.",
   ].join(" ");
   const user = [
@@ -497,6 +706,7 @@ export async function generateWeeklyInsight(input: {
     `This week they recycled/composted ${input.recyclableCount} items and trashed ${input.trashedCount}.`,
     `Top materials: ${topList || "none"}.`,
     "Give them ONE concrete, location-aware tip that improves their impact, plus the source.",
+    searchSection,
   ].join(" ");
 
   const body = {
@@ -535,15 +745,22 @@ export async function generateWeeklyInsight(input: {
     ],
   };
   try {
-    const res = await fetch(CHAT_URL, {
+    const res = await fetch(AGENT_URL, {
       method: "POST",
       headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
       body: JSON.stringify(body),
     });
     if (!res.ok) throw new Error(`status ${res.status}`);
     const json: any = await res.json();
-    const content = json?.choices?.[0]?.message?.content;
-    const parsed = typeof content === "string" ? JSON.parse(content) : content;
+    // Agent API returns structured data in output_text when using response_format
+    const content = json.output_text || json?.choices?.[0]?.message?.content || JSON.stringify(json);
+    let parsed: any;
+    try {
+      parsed = typeof content === "string" ? JSON.parse(content) : content;
+    } catch {
+      // Fallback: try to extract from the response
+      parsed = json;
+    }
     return {
       headline: String(parsed?.headline ?? "Keep going!").slice(0, 80),
       body: String(parsed?.body ?? ""),
