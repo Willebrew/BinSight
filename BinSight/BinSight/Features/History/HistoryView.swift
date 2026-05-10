@@ -84,11 +84,14 @@ private struct HistoryRow: View {
                 HStack(spacing: 6) {
                     decisionPill
                     if let region = regionLabel {
-                        Label(region, systemImage: "mappin")
-                            .labelStyle(.titleAndIcon)
-                            .font(.system(.caption2, design: .rounded).weight(.bold))
-                            .foregroundStyle(BinSightTokens.Color.softInk)
-                            .lineLimit(1)
+                        HStack(spacing: 3) {
+                            Image(systemName: "mappin")
+                                .imageScale(.small)
+                            Text(region)
+                        }
+                        .font(.system(.caption2, design: .rounded).weight(.bold))
+                        .foregroundStyle(BinSightTokens.Color.softInk)
+                        .lineLimit(1)
                     }
                     if let kg = primaryCo2 {
                         Text(String(format: "%.2f kg", kg))
