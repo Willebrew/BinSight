@@ -53,7 +53,12 @@ struct MethodologyView: View {
                     """
                 )
             }
-            .padding(20)
+            .padding(.horizontal, 20)
+            .padding(.top, 20)
+            .padding(.bottom, 20)
+        }
+        .safeAreaInset(edge: .bottom) {
+            Color.clear.frame(height: 100)
         }
         .navigationTitle("Methodology")
         .navigationBarTitleDisplayMode(.inline)

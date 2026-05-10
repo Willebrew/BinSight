@@ -14,6 +14,16 @@ struct DashboardView: View {
     @State private var firstScanCelebration = false
     @AppStorage("binsight.hasSeenFirstScan") private var hasSeenFirstScan = false
     @State private var hasReceivedInitialMetrics = false
+    @State private var openId: String?
+    @State private var dropoffFor: HazardTarget?
+    @Environment(\.binSightSwitchTab) private var switchTab
+
+    private struct Identified: Identifiable { let value: String; var id: String { value } }
+    private struct HazardTarget: Identifiable {
+        let classificationId: String
+        let label: String
+        var id: String { classificationId }
+    }
 
     private let equivTimer = Timer.publish(every: 4.5, on: .main, in: .common).autoconnect()
 
@@ -58,6 +68,16 @@ struct DashboardView: View {
                 FirstScanCelebration { firstScanCelebration = false }
                     .transition(.opacity)
             }
+        }
+        .sheet(item: Binding(
+            get: { openId.map { Identified(value: $0) } },
+            set: { openId = $0?.value }
+        )) { id in
+            ResultCardView(classificationId: id.value)
+        }
+        .sheet(item: $dropoffFor) { target in
+            HazardDropoffSheet(classificationId: target.classificationId,
+                               itemLabel: target.label)
         }
         .onAppear {
             ConvexService.shared.subscribeMetrics()
@@ -163,11 +183,6 @@ struct DashboardView: View {
                                 .foregroundStyle(BinSightTokens.Color.softInk)
                     }
                 }
-                HStack(spacing: 8) {
-                    heroChip(icon: "flame.fill", value: "\(m?.streakDays ?? 0)d", label: "streak")
-                    heroChip(icon: "checkmark.seal.fill", value: "\(m?.totalRecycled ?? 0)", label: "recycled")
-                    heroChip(icon: "trash.fill", value: "\(m?.totalTrashed ?? 0)", label: "trash")
-                }
                 }
                 .padding(18)
             }
@@ -208,8 +223,8 @@ struct DashboardView: View {
         let pending = metrics?.totalPendingItems ?? 0
         let scanWithPending = rows.first { $0.needsReview }
         if pending > 0, let row = scanWithPending {
-            NavigationLink {
-                ResultCardView(classificationId: row._id)
+            Button {
+                openId = row._id
             } label: {
                 HStack(spacing: 10) {
                     Image(systemName: "hand.draw.fill")
@@ -623,7 +638,6 @@ struct DashboardView: View {
             }
             ForEach(hazards.prefix(3)) { h in
                 HStack(spacing: 8) {
-                    Circle().fill(BinSightTokens.Color.hazard).frame(width: 6, height: 6)
                     VStack(alignment: .leading, spacing: 1) {
                         Text(h.label).font(.subheadline.weight(.semibold))
                         Text(Date(timeIntervalSince1970: h.capturedAt / 1000)
@@ -632,9 +646,7 @@ struct DashboardView: View {
                             .foregroundStyle(.secondary)
                     }
                     Spacer()
-                    NavigationLink {
-                        ResultCardView(classificationId: h.id)
-                    } label: {
+                    Button { HapticEngine.tap(); openId = h.id } label: {
                         Text("View").font(.caption.weight(.semibold))
                     }
                 }
@@ -642,14 +654,19 @@ struct DashboardView: View {
             Text("Hazardous items (batteries, paint, electronics) shouldn't go in the trash. Take them to a certified drop-off.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
-            NavigationLink {
-                ImpactMapView()
-            } label: {
-                Label("Find a take-back near you", systemImage: "map.fill")
-                    .font(.caption.weight(.semibold))
-                    .padding(.horizontal, 10).padding(.vertical, 6)
-                    .background(BinSightTokens.Color.hazard.opacity(0.18), in: Capsule())
-                    .foregroundStyle(BinSightTokens.Color.hazard)
+            if let h = hazards.first {
+                Button {
+                    HapticEngine.tap()
+                    dropoffFor = HazardTarget(classificationId: h.id, label: h.label)
+                } label: {
+                    Label("Find best drop-off for \(h.label)", systemImage: "mappin.and.ellipse")
+                        .font(.caption.weight(.semibold))
+                        .lineLimit(1)
+                        .padding(.horizontal, 10).padding(.vertical, 6)
+                        .background(BinSightTokens.Color.hazard.opacity(0.18), in: Capsule())
+                        .foregroundStyle(BinSightTokens.Color.hazard)
+                }
+                .buttonStyle(.plain)
             }
         }
         .padding(14)
@@ -667,9 +684,12 @@ struct DashboardView: View {
                     Label("Friends", systemImage: "person.2.fill")
                         .font(.headline)
                     Spacer()
-                    NavigationLink("View all") { FriendsView() }
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(BinSightTokens.Color.accent)
+                    Button("View all") {
+                        HapticEngine.tap()
+                        switchTab(.friends)
+                    }
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(BinSightTokens.Color.accent)
                 }
                 ForEach(accepted.prefix(3)) { f in
                     HStack(spacing: 10) {
@@ -720,9 +740,7 @@ struct DashboardView: View {
             }
             VStack(spacing: 8) {
                 ForEach(rows.prefix(5)) { row in
-                    NavigationLink {
-                        ResultCardView(classificationId: row._id)
-                    } label: {
+                    Button { HapticEngine.tap(); openId = row._id } label: {
                         RecentDecisionRow(row: row)
                     }
                     .buttonStyle(.plain)
@@ -778,12 +796,13 @@ struct DashboardView: View {
     // MARK: - Helpers
 
     private func lastNDays(n: Int) -> [String] {
-        let cal = Calendar.current
-        var days: [String] = []
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = TimeZone(identifier: "UTC")!
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd"
         formatter.timeZone = TimeZone(identifier: "UTC")
         var cursor = cal.startOfDay(for: Date())
+        var days: [String] = []
         for _ in 0..<n {
             days.append(formatter.string(from: cursor))
             cursor = cal.date(byAdding: .day, value: -1, to: cursor) ?? cursor
@@ -833,7 +852,8 @@ private struct StreakGrid: View {
     }
 
     private func lastDays(n: Int) -> [String] {
-        let cal = Calendar.current
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = TimeZone(identifier: "UTC")!
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd"
         formatter.timeZone = TimeZone(identifier: "UTC")
@@ -854,16 +874,8 @@ private struct RecentDecisionRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            ZStack {
-                if let urlString = row.imageUrl, let url = URL(string: urlString) {
-                    AsyncImage(url: url) { img in
-                        img.resizable().scaledToFill()
-                    } placeholder: {
-                        Color.gray.opacity(0.15)
-                    }
-                } else {
-                    Color.gray.opacity(0.15)
-                }
+            CachedRemoteImage(url: row.imageUrl.flatMap(URL.init(string:))) {
+                Color.gray.opacity(0.15)
             }
             .frame(width: 60, height: 60)
             .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))

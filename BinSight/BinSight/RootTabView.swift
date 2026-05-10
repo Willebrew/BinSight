@@ -1,5 +1,19 @@
 import SwiftUI
 
+/// Environment hook so any view can ask the root tab bar to switch
+/// tabs (e.g. "View all friends" on the Dashboard jumping to the
+/// Friends tab — keeping the bottom-bar selection in sync).
+private struct TabSwitcherKey: EnvironmentKey {
+    static let defaultValue: (AppTab) -> Void = { _ in }
+}
+
+extension EnvironmentValues {
+    var binSightSwitchTab: (AppTab) -> Void {
+        get { self[TabSwitcherKey.self] }
+        set { self[TabSwitcherKey.self] = newValue }
+    }
+}
+
 struct RootTabView: View {
     @State private var selected: AppTab = .dashboard
     @State private var captureRequests = 0
@@ -27,10 +41,13 @@ struct RootTabView: View {
                 .padding(.bottom, 8)
         }
         .ignoresSafeArea(.keyboard, edges: .bottom)
+        .environment(\.binSightSwitchTab) { tab in
+            withAnimation(BinSightTokens.Motion.bounce) { selected = tab }
+        }
     }
 }
 
-private enum AppTab: String, CaseIterable {
+enum AppTab: String, CaseIterable {
     case dashboard = "Home"
     case friends = "Friends"
     case camera = "Scan"
@@ -90,6 +107,7 @@ private struct DuoTabBar: View {
 
     private func tabButton(_ tab: AppTab) -> some View {
         Button {
+            HapticEngine.tap()
             withAnimation(BinSightTokens.Motion.bounce) { selected = tab }
         } label: {
             VStack(spacing: 3) {
@@ -117,8 +135,10 @@ private struct DuoTabBar: View {
     private var scanButton: some View {
         Button {
             if selected == .camera {
+                HapticEngine.captured()
                 captureRequests += 1
             } else {
+                HapticEngine.tap()
                 withAnimation(BinSightTokens.Motion.bounce) { selected = .camera }
             }
         } label: {

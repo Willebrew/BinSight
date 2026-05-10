@@ -46,9 +46,26 @@ export const writeResult = internalMutation({
     verified: v.boolean(),
   },
   handler: async (ctx, args) => {
+    // Preserve user-side reviewState (same merge as writePartial). If
+    // the user swiped during streaming, we never clobber that state
+    // when committing the final snapshot.
+    const row = await ctx.db.get(args.id);
+    const stateByKey = new Map<string, { reviewState: string; reviewedAt?: number }>();
+    for (const it of row?.items ?? []) {
+      const key = `${it.label}|${it.material}|${it.decision}`;
+      stateByKey.set(key, { reviewState: it.reviewState, reviewedAt: it.reviewedAt });
+    }
+    const merged = args.items.map((it) => {
+      const key = `${it.label}|${it.material}|${it.decision}`;
+      const prior = stateByKey.get(key);
+      if (prior && prior.reviewState !== "pending") {
+        return { ...it, reviewState: prior.reviewState as any, reviewedAt: prior.reviewedAt };
+      }
+      return it;
+    });
     await ctx.db.patch(args.id, {
       status: "done",
-      items: args.items,
+      items: merged,
       sources: args.sources,
       localRules: args.localRules,
       citations: args.citations,
@@ -82,13 +99,78 @@ export const writePartial = internalMutation({
   handler: async (ctx, args) => {
     const row = await ctx.db.get(args.id);
     if (!row || row.status !== "pending") return;
+    // Preserve any swipe the user has already made during the
+    // streaming phase. The classify pipeline may re-stream items after
+    // RAG refinement with the original `reviewState: "pending"`, which
+    // would otherwise clobber confirmed/rejected items the user has
+    // already triaged. Merge by item label+material+decision identity.
+    const existing = row.items ?? [];
+    const stateByKey = new Map<string, { reviewState: string; reviewedAt?: number }>();
+    for (const it of existing) {
+      const key = `${it.label}|${it.material}|${it.decision}`;
+      stateByKey.set(key, { reviewState: it.reviewState, reviewedAt: it.reviewedAt });
+    }
+    const merged = args.items.map((it) => {
+      const key = `${it.label}|${it.material}|${it.decision}`;
+      const prior = stateByKey.get(key);
+      if (prior && prior.reviewState !== "pending") {
+        return { ...it, reviewState: prior.reviewState as any, reviewedAt: prior.reviewedAt };
+      }
+      return it;
+    });
     await ctx.db.patch(args.id, {
-      items: args.items,
+      items: merged,
       sources: args.sources,
       localRules: args.localRules,
       citations: args.citations,
       model: args.model,
     });
+  },
+});
+
+/**
+ * Append a single human-readable progress stage to the row's
+ * `progressLog`. The iOS UI subscribes to the row, so each entry
+ * lights up the streaming view + fires a haptic as it arrives.
+ */
+export const appendProgress = internalMutation({
+  args: { id: v.id("classifications"), stage: v.string() },
+  handler: async (ctx, { id, stage }) => {
+    const row = await ctx.db.get(id);
+    if (!row) return;
+    const log = row.progressLog ?? [];
+    // De-dupe consecutive identical stages so we don't spam the UI
+    // when the same step gets logged twice.
+    if (log.length > 0 && log[log.length - 1].stage === stage) return;
+    log.push({ stage, at: Date.now() });
+    await ctx.db.patch(id, { progressLog: log });
+  },
+});
+
+/**
+ * Patch a single item's bounding box. Used by the post-result phase
+ * after the row has been committed: bbox detection runs in the
+ * background and slides into the existing item via this mutation.
+ */
+export const setItemBbox = internalMutation({
+  args: {
+    id: v.id("classifications"),
+    itemIndex: v.number(),
+    bbox: v.object({
+      x: v.number(),
+      y: v.number(),
+      w: v.number(),
+      h: v.number(),
+    }),
+  },
+  handler: async (ctx, { id, itemIndex, bbox }) => {
+    const row = await ctx.db.get(id);
+    if (!row) return;
+    if (itemIndex < 0 || itemIndex >= row.items.length) return;
+    const items = row.items.map((it, i) =>
+      i === itemIndex ? { ...it, bbox } : it,
+    );
+    await ctx.db.patch(id, { items });
   },
 });
 
@@ -138,6 +220,36 @@ export const remove = mutation({
       await ctx.storage.delete(row.storageId);
     }
     await ctx.db.delete(id);
+  },
+});
+
+/**
+ * Wipe every classification + stored image for the calling user.
+ * No args. Use from the iOS client or via `npx convex run`.
+ */
+export const wipeMine = mutation({
+  args: { email: v.optional(v.string()) },
+  handler: async (ctx, { email }) => {
+    let userId = await auth.getUserId(ctx);
+    if (!userId && email) {
+      const u = await ctx.db
+        .query("users")
+        .withIndex("email", (q) => q.eq("email", email))
+        .first();
+      if (u) userId = u._id;
+    }
+    if (!userId) throw new Error("No user");
+    const rows = await ctx.db
+      .query("classifications")
+      .withIndex("by_user_capturedAt", (q) => q.eq("userId", userId))
+      .collect();
+    for (const row of rows) {
+      if (row.storageId) {
+        try { await ctx.storage.delete(row.storageId); } catch { /* ignore */ }
+      }
+      await ctx.db.delete(row._id);
+    }
+    return { deleted: rows.length };
   },
 });
 

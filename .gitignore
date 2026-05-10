@@ -33,3 +33,7 @@ build/
 
 # Misc
 *.log
+
+# Local scratch / build artifacts that have leaked into the tree
+outputs/
+**/.convex/

@@ -17,7 +17,6 @@ struct SettingsView: View {
                     accountSection
                     nameSection
                     methodologyLink
-                    backendSection
                     signOutButton
                 }
                 .padding(20)
@@ -64,9 +63,9 @@ struct SettingsView: View {
     private var aboutSection: some View {
         VStack(alignment: .leading, spacing: 6) {
             DuoSectionHeader(title: "About", systemImage: "leaf.fill")
-            Text("Snap a photo of any waste item and BinSight tells you exactly where it goes - recycle, compost, trash, or hazardous.")
+            Text("BinSight uses AI to identify waste items and provide accurate disposal guidance for recycling, composting, trash, and hazardous materials.")
                 .font(.system(.callout, design: .rounded).weight(.semibold)).foregroundStyle(BinSightTokens.Color.softInk)
-            Text("v0.3 - Convex Auth + Liquid Glass")
+            Text("Version 1.0")
                 .font(.caption2.monospaced().weight(.semibold)).foregroundStyle(BinSightTokens.Color.softInk)
         }
         .padding(14)
@@ -167,27 +166,6 @@ struct SettingsView: View {
             .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(BinSightTokens.Color.stroke, lineWidth: 1.5))
         }
         .buttonStyle(.plain)
-    }
-
-    private var backendSection: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            DuoSectionHeader(title: "Backend", systemImage: "bolt.horizontal.fill")
-            HStack(spacing: 8) {
-                Image(systemName: "checkmark.circle.fill")
-                    .foregroundStyle(BinSightTokens.Color.recycle)
-                Text("Convex connected").font(.system(.callout, design: .rounded).weight(.heavy))
-                Spacer()
-            }
-            Text(ConvexService.deploymentUrl)
-                .font(.caption2.monospaced())
-                .foregroundStyle(BinSightTokens.Color.softInk)
-                .lineLimit(1)
-                .truncationMode(.middle)
-        }
-        .padding(14)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.white, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(BinSightTokens.Color.stroke, lineWidth: 1.5))
     }
 
     private var signOutButton: some View {

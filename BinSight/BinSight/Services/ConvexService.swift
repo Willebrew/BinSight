@@ -198,6 +198,11 @@ final class ConvexService: ObservableObject {
         return try await client.action("facilities:nearby", with: args)
     }
 
+    func bestDropoff(classificationId: String) async throws -> DropoffResultDoc {
+        let args: [String: ConvexEncodable?] = ["classificationId": classificationId]
+        return try await client.action("dropoff:findBest", with: args)
+    }
+
     // MARK: - Profile
 
     func subscribeProfile() -> AnyPublisher<ProfileDoc?, ClientError> {
@@ -219,6 +224,11 @@ final class ConvexService: ObservableObject {
 
     func subscribeFriends() -> AnyPublisher<FriendsDoc, ClientError> {
         client.subscribe(to: "friends:list", yielding: FriendsDoc.self)
+            .eraseToAnyPublisher()
+    }
+
+    func subscribeFriendCompare() -> AnyPublisher<FriendCompareDoc?, ClientError> {
+        client.subscribe(to: "friends:compareStats", yielding: FriendCompareDoc?.self)
             .eraseToAnyPublisher()
     }
 

@@ -66,7 +66,6 @@ struct CameraScreen: View {
         }
         .onReceive(Timer.publish(every: 1.4, on: .main, in: .common).autoconnect()) { _ in
             if camera.isRunning && !flow.isWorking {
-                HapticEngine.tick()
                 withAnimation(BinSightTokens.Motion.lift) { pulse.toggle() }
             }
         }

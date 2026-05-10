@@ -19,6 +19,10 @@
 // - google/gemini-3.1-pro-preview
 // - See https://docs.perplexity.ai/docs/agent-api/models for full list
 
+// Perplexity Agent API (Responses-shape). Body uses `input` (not `messages`)
+// with content blocks of type `input_text` / `input_image`. Structured
+// output goes under `text.format`. Streaming emits `response.output_text.delta`
+// events with a `delta` string.
 const AGENT_URL = "https://api.perplexity.ai/v1/agent";
 const SEARCH_URL = "https://api.perplexity.ai/search";
 
@@ -40,6 +44,8 @@ export type RawItem = {
   confidence: number;
   estimatedMassG?: number;
   disposalNotes: string;
+  /** Normalized [0,1] bounding box over the original image. */
+  bbox?: { x: number; y: number; w: number; h: number };
   /** indices into the agent's `sources` array */
   sourceIndices?: number[];
 };
@@ -56,52 +62,13 @@ const wasteSchema = {
   schema: {
     type: "object",
     additionalProperties: false,
-    required: ["items", "sources", "localRules"],
+    required: ["steps", "sources", "localRules", "items"],
     properties: {
-      items: {
+      steps: {
         type: "array",
-        items: {
-          type: "object",
-          additionalProperties: false,
-          required: [
-            "label",
-            "material",
-            "decision",
-            "confidence",
-            "estimatedMassG",
-            "disposalNotes",
-            "sourceIndices",
-          ],
-          properties: {
-            label: { type: "string", description: "Short human-readable item name." },
-            material: {
-              type: "string",
-              description:
-                "One of: pet, hdpe, ldpe, pp, ps, plastic, aluminum, steel, tin, paper, cardboard, newspaper, glass, organic, food, yard, mixed, unknown",
-            },
-            decision: {
-              type: "string",
-              enum: ["recycle", "trash", "compost", "hazard"],
-            },
-            confidence: { type: "number", minimum: 0, maximum: 1 },
-            estimatedMassG: {
-              type: "number",
-              description:
-                "Best-effort mass in grams of THIS specific item from visual cues. Use 0 if you truly cannot tell.",
-            },
-            disposalNotes: {
-              type: "string",
-              description:
-                "1-2 sentences explaining why this decision and any prep needed (rinse, flatten, remove cap, etc.).",
-            },
-            sourceIndices: {
-              type: "array",
-              items: { type: "integer", minimum: 0 },
-              description:
-                "Indices into the top-level `sources` array that justify this item's decision and disposal notes. Required: every item must have at least one source.",
-            },
-          },
-        },
+        description:
+          "Append-only narration of YOUR actual reasoning + research as you go. Stream this FIRST so the user feels the agent thinking. Each entry is a short user-facing sentence in present tense, ≤60 chars. Examples: 'Spotting the orange Joy-Con grip', 'Recognized as Nintendo Switch controller', 'Lithium battery inside - cannot trash', 'Searching denvergov.org for e-waste rules', 'Confirmed: Denver requires HHW drop-off'. Aim for 5-10 steps that match what you ACTUALLY do.",
+        items: { type: "string" },
       },
       sources: {
         type: "array",
@@ -110,7 +77,7 @@ const wasteSchema = {
         items: {
           type: "object",
           additionalProperties: false,
-          required: ["url", "title", "publisher", "snippet", "kind"],
+          required: ["url", "title", "publisher", "snippet", "quotes", "kind"],
           properties: {
             url: { type: "string", description: "Full URL." },
             title: { type: "string", description: "Page title." },
@@ -123,6 +90,14 @@ const wasteSchema = {
               description:
                 "1-2 sentence direct quote or close paraphrase from the page that supports the items pointing to this source.",
             },
+            quotes: {
+              type: "array",
+              minItems: 1,
+              maxItems: 3,
+              description:
+                "1-3 short, VERBATIM quoted sentences (or short clauses) from the page itself that justify the decisions citing this source. Each quote ≤200 characters. Use only words that actually appear on the page (you fetched it). Do not paraphrase here.",
+              items: { type: "string" },
+            },
             kind: {
               type: "string",
               enum: ["material", "rule", "both"],
@@ -134,8 +109,68 @@ const wasteSchema = {
       },
       localRules: {
         type: "string",
+        minLength: 40,
         description:
-          "1-3 sentence summary of any location-specific recycling rules that affect these items.",
+          "REQUIRED 2-4 sentence summary of the user's CITY-SPECIFIC disposal rule(s) for these items. Must name the city and reference the actual local program (e.g. 'Denver Recycles…', 'NYC DSNY…'). If you genuinely don't know city-specific rules, fall back to state-level then EPA guidance, but never leave this empty.",
+      },
+      items: {
+        type: "array",
+        items: {
+          type: "object",
+          additionalProperties: false,
+          required: [
+            "label",
+            "material",
+            "decision",
+            "confidence",
+            "estimatedMassG",
+            "disposalNotes",
+            "bbox",
+            "sourceIndices",
+          ],
+          properties: {
+            label: { type: "string", description: "Short human-readable item name." },
+            material: {
+              type: "string",
+              description:
+                "One of: pet, hdpe, ldpe, film, wrapper, pp, ps, plastic, aluminum, steel, tin, paper, cardboard, newspaper, glass, organic, food, yard, mixed, unknown. Use 'film' for thin flexible plastic packaging like candy wrappers, chip bags, food pouches, plastic shopping bags - NOT 'plastic' (which implies a rigid container).",
+            },
+            decision: {
+              type: "string",
+              enum: ["recycle", "trash", "compost", "hazard"],
+            },
+            confidence: { type: "number", minimum: 0, maximum: 1 },
+            estimatedMassG: {
+              type: "number",
+              description:
+                "Best-effort EMPTY mass in grams of THIS specific item, predicted from visual cues (size relative to other objects, shape, wall thickness, material density). ALWAYS return a positive number greater than 0 - you are an expert; make an educated guess. Only use small values (<5g) for genuinely tiny items like a paper clip or candy wrapper.",
+            },
+            disposalNotes: {
+              type: "string",
+              description:
+                "1-2 sentences explaining why this decision and any prep needed (rinse, flatten, remove cap, etc.).",
+            },
+            bbox: {
+              type: "object",
+              additionalProperties: false,
+              required: ["x", "y", "w", "h"],
+              description:
+                "Tight bounding box around THIS item in the photo, normalized to [0,1] where (0,0) is the TOP-LEFT and (1,1) is the BOTTOM-RIGHT of the image. x,y is the top-left corner of the box; w,h is its width and height. Be tight to the visible silhouette.",
+              properties: {
+                x: { type: "number", minimum: 0, maximum: 1 },
+                y: { type: "number", minimum: 0, maximum: 1 },
+                w: { type: "number", minimum: 0, maximum: 1 },
+                h: { type: "number", minimum: 0, maximum: 1 },
+              },
+            },
+            sourceIndices: {
+              type: "array",
+              items: { type: "integer", minimum: 0 },
+              description:
+                "Indices into the top-level `sources` array that justify this item's decision and disposal notes. Required: every item must have at least one source.",
+            },
+          },
+        },
       },
     },
   },
@@ -265,11 +300,14 @@ export async function lookupLocalRules(
       if (!byUrl.has(s.url)) byUrl.set(s.url, s);
     }
     const sources = Array.from(byUrl.values()).slice(0, 4);
+    // Pick the first two snippets, normalize whitespace, drop leading
+    // bullet/dash artifacts, and clip to one short sentence each. Each
+    // entry is delimited by `||` so the UI can render bullets cleanly.
     const summary = sources
       .slice(0, 2)
-      .map((s) => `${s.publisher}: ${(s.snippet || "").trim().slice(0, 200)}`)
+      .map((s) => cleanRuleSnippet(s.snippet))
       .filter((line) => line.length > 0)
-      .join(" — ");
+      .join(" || ");
     return { summary, sources };
   } catch {
     return { summary: "", sources: [] };
@@ -349,10 +387,20 @@ function systemPrompt(
     : "";
 
   return [
-    "You are BinSight, an expert in municipal waste classification.",
+    "You are BinSight, an expert in municipal waste classification. You have REAL tool access: `web_search` (live web queries) and `fetch_url` (read a specific page). USE THESE TOOLS - do not rely on training data when local rules might be stale.",
+    "OUTPUT JSON IN THIS EXACT ORDER: `steps` first (live narration), then `sources` (every URL you actually retrieved), then `localRules` (city summary), then `items` LAST (each item's `sourceIndices` references the already-emitted `sources` array). This ordering is critical — the user sees each section appear in real time.",
+    "STREAM YOUR `steps` ARRAY FIRST. Each entry is one short, present-tense, user-facing sentence narrating what you are *actually* doing right now. Push them in the order you do the work: looking, recognizing, considering materials, searching the web, finding a rule, deciding. The user is feeling each step land - be honest, specific, and concise.",
     "Identify every distinct waste item visible in the photo.",
+    "MUST do at least one `web_search` for the user's specific city + the dominant material/category before deciding (e.g. 'Denver curbside recycling Joy-Con electronics'). MUST `fetch_url` the most authoritative result (municipal .gov page) to confirm the rule.",
+    "Cite ONLY URLs you actually retrieved via your tools. Do not invent or recall URLs from memory.",
+    "Always populate `localRules` with a 2-4 sentence summary of the user's city's disposal rule for the dominant items. Name the program (e.g. 'Denver Recycles', 'NYC DSNY', 'SFE'). This field is what the user reads at a glance - it must never be empty.",
+    "Always include at least one source with kind='rule' (a municipal/.gov page that justifies the disposal decision) and at least one with kind='material' (a manufacturer or spec page that justifies what the item is made of).",
+    "ASSUME all photographed items are empty/discarded ready for disposal (e.g. a beverage can pictured here is empty, even if liquid is still visible — the user is about to throw it away). Calculate mass and decisions based on the EMPTY item, not full.",
+    "ALWAYS fill the `material` field with the dominant material in lowercase: one of `pet`, `hdpe`, `ldpe`, `pp`, `ps`, `plastic`, `aluminum`, `steel`, `tin`, `paper`, `cardboard`, `newspaper`, `glass`, `organic`, `food`, `yard`, `mixed`. Only use `unknown` if you genuinely cannot tell — an aluminum beverage can is `aluminum`, a plastic water bottle is `pet`, a cardboard box is `cardboard`.",
+    "Use the field names `label` (short item name), `material`, `decision`, `confidence`, `estimatedMassG`, `disposalNotes`, `bbox`, `sourceIndices`. Do not rename them.",
+    "For EACH item, output a TIGHT bounding box `bbox` around its visible silhouette in the photo, using normalized coordinates [0,1] where (0,0)=top-left and (1,1)=bottom-right. `x,y` is the top-left of the box; `w,h` are its width and height. Pad by no more than ~3% beyond the object's edges. If you genuinely cannot localize, return `{x:0,y:0,w:1,h:1}`.",
     "For each item, decide whether it should be recycled, composted, trashed, or treated as hazardous, given the user's location.",
-    "Estimate each item's mass in grams from visual cues; if you genuinely cannot tell, return 0 (we'll fall back to a default).",
+    "PREDICT each item's EMPTY mass in grams using visual cues (size, shape, wall thickness, material density) and your knowledge of typical product weights. NEVER return 0 - always commit to your best educated estimate. Reference points: empty 12oz aluminum can ~14g, empty 250mL aluminum can ~15g, empty 500mL PET bottle ~10g, empty 12oz glass beer bottle ~190g, empty drinking glass / tumbler 200-400g, empty wine glass 150-220g, empty Mason jar 250-400g, empty cardboard cereal box ~50g, empty pizza box ~80g, empty 15oz steel can ~50g, candy wrapper / chip bag ~3-8g, plastic shopping bag ~6g, banana peel ~40g, apple core ~30g, paper coffee cup with sleeve ~12g, single sheet of letter paper ~5g, AA battery ~23g, AAA battery ~12g, 9V battery ~46g, smartphone ~180g, MacBook laptop ~1400g. Scale these for the item's apparent size in the photo. If you're unsure of exact weight, give your best calibrated guess - your prediction beats a flat default.",
     "Be conservative: if a container is contaminated with food and the local program rejects contaminated items, mark as trash.",
     "When sourcing, prefer official municipal pages (e.g. 'sfenvironment.org', 'nyc.gov/sanitation') and .gov / EPA over blogs or forums.",
     "For EACH item, include sources of BOTH kinds when possible: (a) material/object identification (manufacturer site, Wikipedia, product spec) tagged with kind='material', and (b) local disposal rule (municipal program, EPA) tagged with kind='rule'. Use kind='both' if a single source covers both.",
@@ -371,6 +419,7 @@ export async function classifyImage(
   city?: string,
   state?: string,
   onProgress?: (snapshot: Partial<AgentResult>) => Promise<void> | void,
+  onStage?: (stage: string) => Promise<void> | void,
 ): Promise<AgentResult> {
   const apiKey = process.env.PERPLEXITY_API_KEY;
   if (!apiKey) {
@@ -388,20 +437,30 @@ export async function classifyImage(
 
   const body: any = {
     model,
-    response_format: { type: "json_schema", json_schema: wasteSchema },
-    messages: [
-      {
-        role: "system",
-        content: systemPrompt(lat, lng, city, state),
-      },
+    instructions: systemPrompt(lat, lng, city, state),
+    input: [
       {
         role: "user",
         content: [
-          { type: "text", text: "Classify the items in this photo for disposal." },
-          { type: "image_url", image_url: { url: dataUrl } },
+          { type: "input_text", text: "Classify the items in this photo for disposal." },
+          { type: "input_image", image_url: dataUrl },
         ],
       },
     ],
+    // Real built-in tools: the model fires actual web_search calls
+    // against the live web rather than recalling training-data URLs.
+    // SSE emits tool-call events we surface as live stages.
+    tools: [
+      { type: "web_search" },
+      { type: "fetch_url" },
+    ],
+    text: {
+      format: {
+        type: "json_schema",
+        name: "waste_detection",
+        schema: wasteSchema.schema,
+      },
+    },
   };
   if (useStreaming) body.stream = true;
 
@@ -420,14 +479,17 @@ export async function classifyImage(
 
   if (!useStreaming) {
     const json: any = await res.json();
-    // Agent API returns structured data in output_text when using response_format
-    const content = json.output_text || json.choices?.[0]?.message?.content || JSON.stringify(json);
-    let parsed: any;
-    try {
-      parsed = JSON.parse(content);
-    } catch {
-      // Fallback: try to extract JSON from the response
-      parsed = extractStructured(json);
+    const content = extractResponsesText(json);
+    let parsed: any = {};
+    if (content) {
+      try {
+        parsed = JSON.parse(content);
+      } catch {
+        const match = content.match(/\{[\s\S]*\}/);
+        if (match) {
+          try { parsed = JSON.parse(match[0]); } catch { /* ignore */ }
+        }
+      }
     }
     const flatCitations: string[] = Array.isArray(json.citations) ? json.citations : [];
     return {
@@ -444,10 +506,11 @@ export async function classifyImage(
   // partial buffer on every chunk; expensive (O(n²)) but n is small.
   const reader = (res.body as any)?.getReader?.();
   if (!reader) {
-    // Fallback: consume non-streaming
     const txt = await res.text();
     const json: any = (() => { try { return JSON.parse(txt); } catch { return {}; } })();
-    const parsed = extractStructured(json);
+    const content = extractResponsesText(json);
+    let parsed: any = {};
+    if (content) { try { parsed = JSON.parse(content); } catch { /* ignore */ } }
     return {
       items: parsed.items ?? [],
       sources: parsed.sources ?? [],
@@ -457,11 +520,92 @@ export async function classifyImage(
     };
   }
 
+  // Responses-API SSE: each event is a JSON object with a `type` field.
+  // We care about `response.output_text.delta` (incremental text in `delta`)
+  // and `response.completed` (final response object in `response`).
   const decoder = new TextDecoder();
   let sseBuffer = "";
   let contentBuffer = "";
   let lastEmittedCount = -1;
+  let lastEmittedStepCount = 0;
   let lastCitations: string[] = [];
+  let finalJson: any = null;
+  // Live tool-call source discovery: every URL we see in a tool
+  // result or citations array gets pushed here so the iOS pills
+  // animate in as the agent searches, not just at the end when
+  // the structured `sources[]` finally serializes.
+  const liveSources: Array<{ url: string; title: string; publisher: string; snippet: string }> = [];
+  const seenUrls = new Set<string>();
+  const addSource = (url: string, title?: string, publisher?: string, snippet?: string) => {
+    if (!url || typeof url !== "string" || !url.startsWith("http")) return false;
+    if (seenUrls.has(url)) return false;
+    seenUrls.add(url);
+    let host = "";
+    try { host = new URL(url).host.replace(/^www\./, ""); } catch {}
+    liveSources.push({
+      url,
+      title: title || host,
+      publisher: publisher || host,
+      snippet: snippet || "",
+    });
+    return true;
+  };
+  const stageNow = async (s: string) => {
+    try { await onStage?.(s); } catch { /* never block */ }
+  };
+  // Push live sources to the writePartial pipeline so iOS sees them.
+  // Includes whatever items have already been parsed so the partial
+  // write doesn't accidentally wipe the items list.
+  const flushLiveSources = async () => {
+    if (liveSources.length === 0) return;
+    const partial = parsePartialAgentJson(contentBuffer);
+    try {
+      await onProgress?.({
+        items: partial.items ? partial.items.map(normalizeItem) : [],
+        sources: liveSources.map((s) => ({ ...s, kind: "rule" as const, isLocal: false, supportsItemIndices: [] })) as any,
+        localRules: partial.localRules ?? "",
+        citations: lastCitations,
+        model,
+      });
+    } catch { /* never block */ }
+  };
+
+  const seenEventTypes = new Set<string>();
+  // Recursively walk an event payload and harvest any URL-shaped strings.
+  // We don't know the exact tool-result shape Perplexity emits, so we
+  // scrape any field that looks like a URL with a title nearby.
+  const harvestUrls = (node: any): boolean => {
+    let added = false;
+    const visit = (n: any) => {
+      if (!n) return;
+      if (typeof n === "string") {
+        if (n.startsWith("http://") || n.startsWith("https://")) {
+          if (addSource(n)) added = true;
+        }
+        return;
+      }
+      if (Array.isArray(n)) {
+        for (const x of n) visit(x);
+        return;
+      }
+      if (typeof n === "object") {
+        if (typeof n.url === "string" && n.url.startsWith("http")) {
+          // Don't fall back to n.source — Perplexity tool events use that
+          // as the channel marker (e.g. "web"), not the publishing org.
+          // Let addSource derive publisher from the URL host instead.
+          if (addSource(n.url, n.title, n.publisher, n.snippet ?? n.text)) {
+            added = true;
+          }
+        }
+        for (const k of Object.keys(n)) {
+          if (k === "url") continue;
+          visit(n[k]);
+        }
+      }
+    };
+    visit(node);
+    return added;
+  };
 
   while (true) {
     const { value, done } = await reader.read();
@@ -474,23 +618,87 @@ export async function classifyImage(
       sseBuffer = sseBuffer.slice(nlIdx + 1);
       if (!line.startsWith("data:")) continue;
       const data = line.slice(5).trim();
-      if (data === "[DONE]") continue;
+      if (!data || data === "[DONE]") continue;
       try {
-        const parsed = JSON.parse(data);
-        const delta = parsed?.choices?.[0]?.delta?.content;
-        if (typeof delta === "string") contentBuffer += delta;
-        if (Array.isArray(parsed?.citations)) lastCitations = parsed.citations;
+        const ev = JSON.parse(data);
+        const type: string | undefined = ev?.type;
+        // Log every distinct event type once so we can see what
+        // Perplexity actually emits for tool calls.
+        if (typeof type === "string" && !seenEventTypes.has(type)) {
+          seenEventTypes.add(type);
+          console.log(`[sage] sse event type: ${type} keys=${Object.keys(ev).join(",")}`);
+        }
+        if (type === "response.output_text.delta" && typeof ev.delta === "string") {
+          contentBuffer += ev.delta;
+        } else if (type === "response.completed" && ev.response) {
+          finalJson = ev.response;
+          if (Array.isArray(finalJson.citations)) lastCitations = finalJson.citations;
+          // Final response may carry the full tool-call/citations bundle.
+          if (harvestUrls(finalJson)) await flushLiveSources();
+        } else if (Array.isArray(ev?.citations)) {
+          lastCitations = ev.citations;
+          let added = false;
+          for (const c of ev.citations) {
+            const url = typeof c === "string" ? c : c?.url;
+            if (addSource(url, c?.title, c?.publisher, c?.snippet)) added = true;
+          }
+          if (added) await flushLiveSources();
+        } else if (typeof type === "string") {
+          // Best-effort: any non-text-delta event might carry tool URLs.
+          // Walk the whole envelope and pluck them out.
+          const isToolEvent =
+            type.includes("tool") || type.includes("search") ||
+            type.includes("citation") || type.includes("web") ||
+            type.includes("fetch");
+          if (isToolEvent) {
+            // Surface a stage line if we can identify the tool.
+            const toolName: string | undefined =
+              ev?.tool_call?.name || ev?.tool?.name || ev?.name ||
+              (type.includes("search") ? "web_search" : type.includes("fetch") ? "fetch_url" : undefined);
+            const toolArgs: any =
+              ev?.tool_call?.input || ev?.tool?.input || ev?.arguments ||
+              ev?.input || ev?.query;
+            if (toolName === "web_search") {
+              const q = String(toolArgs?.query ?? toolArgs ?? "").slice(0, 70);
+              if (type.endsWith(".created") || type.includes("started")) {
+                await stageNow(q ? `Searching: ${q}` : "Searching the web");
+              } else if (type.endsWith(".completed") || type.includes("output") || type.includes("result")) {
+                await stageNow("Reading results");
+              }
+            } else if (toolName === "fetch_url") {
+              const u = String(toolArgs?.url ?? toolArgs ?? "");
+              const host = u.replace(/^https?:\/\/(www\.)?/, "").split("/")[0];
+              if (type.endsWith(".created") || type.includes("started")) {
+                await stageNow(host ? `Reading ${host}` : "Reading page");
+              }
+            }
+            if (harvestUrls(ev)) await flushLiveSources();
+          }
+        }
       } catch {
         /* ignore non-JSON keepalive lines */
       }
     }
 
     const partial = parsePartialAgentJson(contentBuffer);
+    // Drain newly-completed `steps[]` entries to the UI as soon as
+    // each one is parseable. This is the model's own narration of
+    // what it's doing, not a synthetic heartbeat.
+    const partialSteps: string[] = Array.isArray((partial as any).steps)
+      ? (partial as any).steps
+      : [];
+    if (partialSteps.length > lastEmittedStepCount) {
+      for (let i = lastEmittedStepCount; i < partialSteps.length; i++) {
+        const s = String(partialSteps[i] ?? "").trim();
+        if (s) await stageNow(s);
+      }
+      lastEmittedStepCount = partialSteps.length;
+    }
     if (partial.items && partial.items.length > lastEmittedCount) {
       lastEmittedCount = partial.items.length;
       try {
         await onProgress?.({
-          items: partial.items,
+          items: partial.items.map(normalizeItem),
           sources: partial.sources ?? [],
           localRules: partial.localRules ?? "",
           citations: lastCitations,
@@ -502,15 +710,102 @@ export async function classifyImage(
     }
   }
 
-  // Final parse from the accumulated content
-  const finalParsed = parsePartialAgentJson(contentBuffer);
+  // Try parsing both the delta-accumulated buffer AND the authoritative
+  // response.completed text (if any) and pick whichever yields more items.
+  // This avoids the trap where one source is fuller than the other.
+  const candidates: string[] = [];
+  if (contentBuffer) candidates.push(contentBuffer);
+  if (finalJson) {
+    const authoritative = extractResponsesText(finalJson);
+    if (authoritative) candidates.push(authoritative);
+  }
+  const parseAttempts = candidates.map((text) => {
+    let p = parsePartialAgentJson(text);
+    if (!p.items || p.items.length === 0) {
+      try {
+        const j = JSON.parse(text);
+        if (j && Array.isArray(j.items)) p = j;
+      } catch { /* ignore */ }
+    }
+    return { text, parsed: p };
+  });
+  parseAttempts.sort(
+    (a, b) => (b.parsed.items?.length ?? 0) - (a.parsed.items?.length ?? 0),
+  );
+  const best = parseAttempts[0] ?? { text: "", parsed: {} as any };
+  console.log(
+    `[sage] stream finished: candidates=${candidates.map((c) => c.length).join(",")}b chosenItems=${best.parsed.items?.length ?? 0}`,
+  );
+  if (!best.parsed.items || best.parsed.items.length === 0) {
+    console.log(`[sage] no items parsed. text head: ${best.text.slice(0, 1200)}`);
+  }
   return {
-    items: finalParsed.items ?? [],
-    sources: finalParsed.sources ?? [],
-    localRules: finalParsed.localRules ?? "",
+    items: (best.parsed.items ?? []).map(normalizeItem),
+    sources: best.parsed.sources ?? [],
+    localRules: best.parsed.localRules ?? "",
     citations: lastCitations,
     model,
   };
+}
+
+/**
+ * Models occasionally drift to alternate field names despite our schema —
+ * e.g. `name` instead of `label`, `category` instead of `decision`,
+ * `massGrams`/`mass_g` instead of `estimatedMassG`. Map them back so the
+ * downstream pipeline doesn't drop the item.
+ */
+function normalizeItem(raw: any): RawItem {
+  const label = raw?.label ?? raw?.name ?? raw?.title ?? "";
+  const material = raw?.material ?? raw?.materialType ?? raw?.material_type ?? "unknown";
+  let decision = raw?.decision ?? raw?.category ?? raw?.disposal ?? "trash";
+  if (typeof decision === "string") {
+    const d = decision.toLowerCase().trim();
+    if (d.startsWith("recyc")) decision = "recycle";
+    else if (d.startsWith("comp")) decision = "compost";
+    else if (d.startsWith("haz")) decision = "hazard";
+    else decision = "trash";
+  }
+  const estimatedMassG =
+    raw?.estimatedMassG ?? raw?.massGrams ?? raw?.mass_g ?? raw?.massG ?? raw?.mass ?? 0;
+  const bboxRaw = raw?.bbox ?? raw?.boundingBox ?? raw?.bounding_box ?? raw?.box;
+  let bbox: RawItem["bbox"];
+  if (bboxRaw && typeof bboxRaw === "object") {
+    const x = Number(bboxRaw.x ?? bboxRaw.left ?? bboxRaw[0]);
+    const y = Number(bboxRaw.y ?? bboxRaw.top ?? bboxRaw[1]);
+    const w = Number(bboxRaw.w ?? bboxRaw.width ?? bboxRaw[2]);
+    const h = Number(bboxRaw.h ?? bboxRaw.height ?? bboxRaw[3]);
+    if ([x, y, w, h].every((n) => Number.isFinite(n) && n >= 0 && n <= 1) && w > 0 && h > 0) {
+      bbox = { x, y, w, h };
+    }
+  }
+  return {
+    label: String(label),
+    material: String(material),
+    decision: decision as RawItem["decision"],
+    confidence: typeof raw?.confidence === "number" ? raw.confidence : 0,
+    estimatedMassG: typeof estimatedMassG === "number" ? estimatedMassG : 0,
+    disposalNotes: String(raw?.disposalNotes ?? raw?.notes ?? raw?.disposal_notes ?? ""),
+    bbox,
+    sourceIndices: Array.isArray(raw?.sourceIndices)
+      ? raw.sourceIndices
+      : Array.isArray(raw?.source_indices)
+        ? raw.source_indices
+        : [],
+  };
+}
+
+/** Pull the assistant text out of a Responses-API JSON body. */
+function extractResponsesText(json: any): string {
+  if (typeof json?.output_text === "string" && json.output_text) return json.output_text;
+  const output = Array.isArray(json?.output) ? json.output : [];
+  const parts: string[] = [];
+  for (const item of output) {
+    const content = Array.isArray(item?.content) ? item.content : [];
+    for (const c of content) {
+      if (typeof c?.text === "string") parts.push(c.text);
+    }
+  }
+  return parts.join("");
 }
 
 /**
@@ -523,6 +818,7 @@ function parsePartialAgentJson(buf: string): {
   items?: RawItem[];
   sources?: RawSource[];
   localRules?: string;
+  steps?: string[];
 } {
   if (!buf) return {};
   // Try the easy path first: the full doc is parseable.
@@ -536,6 +832,7 @@ function parsePartialAgentJson(buf: string): {
     items: collectArray(buf, '"items"') as RawItem[] | undefined,
     sources: collectArray(buf, '"sources"') as RawSource[] | undefined,
     localRules: extractString(buf, '"localRules"'),
+    steps: collectArray(buf, '"steps"') as string[] | undefined,
   };
 }
 
@@ -550,11 +847,30 @@ function collectArray(buf: string, key: string): unknown[] | undefined {
   let start = -1;
   let inString = false;
   let escape = false;
+  let stringStart = -1;
   while (i < buf.length) {
     const c = buf[i];
     if (escape) { escape = false; i++; continue; }
     if (c === "\\") { escape = true; i++; continue; }
-    if (c === '"') { inString = !inString; i++; continue; }
+    if (c === '"') {
+      // String element handling: only at array depth 0 (not inside an object)
+      if (depth === 0) {
+        if (!inString) {
+          inString = true;
+          stringStart = i;
+        } else {
+          inString = false;
+          // Completed top-level string element.
+          const slice = buf.slice(stringStart, i + 1);
+          try { out.push(JSON.parse(slice)); } catch { /* skip */ }
+          stringStart = -1;
+        }
+      } else {
+        inString = !inString;
+      }
+      i++;
+      continue;
+    }
     if (inString) { i++; continue; }
     if (c === "{") { if (depth === 0) start = i; depth++; }
     else if (c === "}") {
@@ -695,6 +1011,32 @@ async function runSpecSearch(apiKey: string, query: string): Promise<any[]> {
   }
 }
 
+/**
+ * Turn a raw search snippet into a clean one-sentence rule.
+ * Strips leading bullets/dashes, collapses whitespace, takes the first
+ * sentence (or first ~140 chars) so the UI can render a tidy line.
+ */
+function cleanRuleSnippet(raw: string | undefined): string {
+  if (!raw) return "";
+  const collapsed = raw.replace(/\s+/g, " ").trim();
+  let stripped = collapsed.replace(/^[-•*–·▪▸▶►‣◦\s]+/, "").trim();
+
+  // Torn-word heuristic: when a search engine cuts a snippet at the
+  // wrong character, you sometimes get a lowercase orphan letter glued
+  // to the next capitalized word ("rPrinted on…", "sNo plastic…").
+  // Strip a leading single-letter run that's immediately followed by
+  // an uppercase letter — that pattern almost never appears naturally
+  // in well-formed prose.
+  stripped = stripped.replace(/^([a-z]{1,2})(?=[A-Z])/, "").trim();
+
+  // Take first sentence-ish span, then clamp length.
+  const firstSentence = stripped.split(/(?<=[.!?])\s+/)[0] ?? stripped;
+  const trimmed = firstSentence.length > 160
+    ? firstSentence.slice(0, 157).replace(/\s+\S*$/, "") + "…"
+    : firstSentence;
+  return trimmed;
+}
+
 function hostFor(url: string): string {
   try {
     return new URL(url).hostname.replace(/^www\./, "");
@@ -816,40 +1158,34 @@ export async function generateWeeklyInsight(input: {
     searchSection,
   ].join(" ");
 
-  const body = {
-    model,
-    response_format: {
-      type: "json_schema",
-      json_schema: {
-        schema: {
+  const insightSchema = {
+    type: "object",
+    additionalProperties: false,
+    required: ["headline", "body", "sources"],
+    properties: {
+      headline: { type: "string" },
+      body: { type: "string" },
+      sources: {
+        type: "array",
+        items: {
           type: "object",
           additionalProperties: false,
-          required: ["headline", "body", "sources"],
+          required: ["url", "title", "publisher", "snippet"],
           properties: {
-            headline: { type: "string" },
-            body: { type: "string" },
-            sources: {
-              type: "array",
-              items: {
-                type: "object",
-                additionalProperties: false,
-                required: ["url", "title", "publisher", "snippet"],
-                properties: {
-                  url: { type: "string" },
-                  title: { type: "string" },
-                  publisher: { type: "string" },
-                  snippet: { type: "string" },
-                },
-              },
-            },
+            url: { type: "string" },
+            title: { type: "string" },
+            publisher: { type: "string" },
+            snippet: { type: "string" },
           },
         },
       },
     },
-    messages: [
-      { role: "system", content: sys },
-      { role: "user", content: user },
-    ],
+  };
+  const body = {
+    model,
+    instructions: sys,
+    input: [{ role: "user", content: [{ type: "input_text", text: user }] }],
+    text: { format: { type: "json_schema", name: "weekly_insight", schema: insightSchema } },
   };
   try {
     const res = await fetch(AGENT_URL, {
@@ -859,14 +1195,10 @@ export async function generateWeeklyInsight(input: {
     });
     if (!res.ok) throw new Error(`status ${res.status}`);
     const json: any = await res.json();
-    // Agent API returns structured data in output_text when using response_format
-    const content = json.output_text || json?.choices?.[0]?.message?.content || JSON.stringify(json);
-    let parsed: any;
-    try {
-      parsed = typeof content === "string" ? JSON.parse(content) : content;
-    } catch {
-      // Fallback: try to extract from the response
-      parsed = json;
+    const content = extractResponsesText(json);
+    let parsed: any = {};
+    if (content) {
+      try { parsed = JSON.parse(content); } catch { /* ignore */ }
     }
     return {
       headline: String(parsed?.headline ?? "Keep going!").slice(0, 80),

@@ -118,16 +118,7 @@ private struct HistoryRow: View {
 
     private var thumbnail: some View {
         Group {
-            if let urlString = doc.imageUrl, let url = URL(string: urlString) {
-                AsyncImage(url: url) { phase in
-                    switch phase {
-                    case .success(let image):
-                        image.resizable().scaledToFill()
-                    default:
-                        thumbnailPlaceholder
-                    }
-                }
-            } else {
+            CachedRemoteImage(url: doc.imageUrl.flatMap(URL.init(string:))) {
                 thumbnailPlaceholder
             }
         }

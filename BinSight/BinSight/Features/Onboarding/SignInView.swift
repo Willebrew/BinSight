@@ -26,7 +26,7 @@ struct SignInView: View {
                             ProgressView().tint(.white)
                         } else {
                             Label(mode == .signIn ? "Sign In" : "Create Account",
-                                  systemImage: mode == .signIn ? "arrow.right.circle.fill" : "sparkles")
+                                  systemImage: mode == .signIn ? "arrow.right.circle.fill" : "person.crop.circle.badge.plus")
                         }
                     }
                     .buttonStyle(DuoButtonStyle(kind: .primary))

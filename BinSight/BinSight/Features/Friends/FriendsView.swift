@@ -3,7 +3,9 @@ import Combine
 
 struct FriendsView: View {
     @State private var doc: FriendsDoc?
+    @State private var compare: FriendCompareDoc?
     @State private var subscription: AnyCancellable?
+    @State private var compareSubscription: AnyCancellable?
     @State private var emailDraft = ""
     @State private var statusMessage: String?
     @State private var sending = false
@@ -60,7 +62,10 @@ struct FriendsView: View {
             .toolbar(.hidden, for: .navigationBar)
         }
         .onAppear { subscribe() }
-        .onDisappear { subscription?.cancel() }
+        .onDisappear {
+            subscription?.cancel()
+            compareSubscription?.cancel()
+        }
     }
 
     // MARK: - Title
@@ -178,7 +183,7 @@ struct FriendsView: View {
             .overlay(RoundedRectangle(cornerRadius: 15, style: .continuous).stroke(BinSightTokens.Color.stroke, lineWidth: 1.5))
             .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
 
-            HStack(spacing: 20) {
+            HStack(spacing: 0) {
                 ForEach(Tab.allCases, id: \.self) { tab in
                     Button {
                         withAnimation(.spring(response: 0.25, dampingFraction: 0.82)) {
@@ -203,10 +208,10 @@ struct FriendsView: View {
                                 .frame(height: 4)
                                 .clipShape(Capsule())
                         }
+                        .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.plain)
                 }
-                Spacer()
             }
         }
     }
@@ -230,14 +235,16 @@ struct FriendsView: View {
                 : "Try a different search term."
             )
         } else {
-            LazyVStack(spacing: 0) {
-                ForEach(Array(filteredFriends.enumerated()), id: \.element.id) { idx, friend in
-                    FriendRow(friend: friend) {
-                        Task { try? await ConvexService.shared.removeFriend(friendshipId: friend.friendshipId) }
-                    }
-                    if idx < filteredFriends.count - 1 {
-                        Divider().padding(.leading, 62)
-                    }
+            LazyVStack(spacing: 14) {
+                ForEach(filteredFriends, id: \.id) { friend in
+                    FriendCompareCard(
+                        friend: friend,
+                        me: compare?.me,
+                        friendStats: compare?.friends.first(where: { $0.userId == friend.otherUserId }),
+                        onRemove: {
+                            Task { try? await ConvexService.shared.removeFriend(friendshipId: friend.friendshipId) }
+                        }
+                    )
                 }
             }
         }
@@ -339,6 +346,9 @@ struct FriendsView: View {
         subscription = ConvexService.shared.subscribeFriends()
             .receive(on: DispatchQueue.main)
             .sink(receiveCompletion: { _ in }, receiveValue: { doc = $0 })
+        compareSubscription = ConvexService.shared.subscribeFriendCompare()
+            .receive(on: DispatchQueue.main)
+            .sink(receiveCompletion: { _ in }, receiveValue: { compare = $0 })
     }
 }
 
@@ -407,6 +417,191 @@ private struct FriendRow: View {
             }
         }
         .padding(.vertical, 10)
+    }
+}
+
+// MARK: - Friend Compare Card
+
+/// Side-by-side comparison card: avatar + name on top, then three
+/// metrics (CO2, items diverted, streak) each rendered as a dual
+/// progress bar showing me vs the friend. The leader gets a small
+/// crown badge so the result is readable at a glance.
+private struct FriendCompareCard: View {
+    let friend: FriendDoc
+    let me: FriendCompareStats?
+    let friendStats: FriendCompareStats?
+    let onRemove: () -> Void
+
+    var body: some View {
+        DuoCard(fill: .white,
+                stroke: BinSightTokens.Color.recycle.opacity(0.18),
+                radius: 22, padding: 0) {
+            VStack(alignment: .leading, spacing: 14) {
+                header
+                if let me, let friendStats {
+                    VStack(spacing: 12) {
+                        CompareBar(
+                            icon: "leaf.fill",
+                            label: "CO₂ saved",
+                            unit: "kg",
+                            myValue: me.totalCo2Kg,
+                            friendValue: friendStats.totalCo2Kg,
+                            tint: BinSightTokens.Color.recycle,
+                            digits: 2
+                        )
+                        CompareBar(
+                            icon: "checkmark.seal.fill",
+                            label: "Items diverted",
+                            unit: "",
+                            myValue: Double(me.totalRecycled),
+                            friendValue: Double(friendStats.totalRecycled),
+                            tint: BinSightTokens.Color.accent,
+                            digits: 0
+                        )
+                        CompareBar(
+                            icon: "flame.fill",
+                            label: "Streak",
+                            unit: "d",
+                            myValue: Double(me.streakDays),
+                            friendValue: Double(friendStats.streakDays),
+                            tint: BinSightTokens.Color.hazard,
+                            digits: 0
+                        )
+                    }
+                } else {
+                    Text("Loading impact…")
+                        .font(.system(.caption, design: .rounded).weight(.bold))
+                        .foregroundStyle(BinSightTokens.Color.softInk)
+                }
+            }
+            .padding(16)
+        }
+    }
+
+    private var header: some View {
+        HStack(spacing: 12) {
+            DuoAvatar(seed: friend.otherDisplayName ?? friend.otherEmail ?? "?", size: 44)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(friend.otherDisplayName ?? "Friend")
+                    .font(.system(.subheadline, design: .rounded).weight(.heavy))
+                    .foregroundStyle(BinSightTokens.Color.ink)
+                if let summary = leaderboardSummary {
+                    Text(summary)
+                        .font(.system(.caption, design: .rounded).weight(.bold))
+                        .foregroundStyle(BinSightTokens.Color.softInk)
+                        .lineLimit(1)
+                } else if let email = friend.otherEmail {
+                    Text(email)
+                        .font(.system(.caption, design: .rounded).weight(.semibold))
+                        .foregroundStyle(BinSightTokens.Color.softInk)
+                        .lineLimit(1)
+                }
+            }
+            Spacer(minLength: 0)
+            Menu {
+                Button(role: .destructive, action: onRemove) {
+                    Label("Remove", systemImage: "person.fill.xmark")
+                }
+            } label: {
+                Image(systemName: "ellipsis")
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(BinSightTokens.Color.softInk)
+                    .padding(8)
+                    .contentShape(Rectangle())
+            }
+        }
+    }
+
+    /// One-line headline summarizing who's ahead. Reads "+0.4 kg CO₂"
+    /// from the user's perspective when they lead, "behind by 3 items"
+    /// when they don't, and is neutral on a tie.
+    private var leaderboardSummary: String? {
+        guard let me, let f = friendStats else { return nil }
+        let dCo2 = me.totalCo2Kg - f.totalCo2Kg
+        if abs(dCo2) >= 0.05 {
+            let sign = dCo2 > 0 ? "+" : "−"
+            return "\(sign)\(String(format: "%.1f", abs(dCo2))) kg CO₂"
+        }
+        let dItems = me.totalRecycled - f.totalRecycled
+        if dItems != 0 {
+            return dItems > 0 ? "leading by \(dItems)" : "behind by \(-dItems)"
+        }
+        return "neck and neck"
+    }
+}
+
+private struct CompareBar: View {
+    let icon: String
+    let label: String
+    let unit: String
+    let myValue: Double
+    let friendValue: Double
+    let tint: Color
+    let digits: Int
+
+    private var max: Double { Swift.max(myValue, friendValue, 0.0001) }
+    private var myFraction: Double { myValue / max }
+    private var friendFraction: Double { friendValue / max }
+    private var iLead: Bool { myValue > friendValue }
+    private var tied: Bool { abs(myValue - friendValue) < 0.0001 }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                Image(systemName: icon)
+                    .font(.caption.weight(.heavy))
+                    .foregroundStyle(tint)
+                Text(label)
+                    .font(.system(.caption, design: .rounded).weight(.heavy))
+                    .foregroundStyle(BinSightTokens.Color.ink)
+                Spacer()
+            }
+            row(label: "You", value: myValue, fraction: myFraction,
+                isWinner: iLead && !tied, primary: true)
+            row(label: friendShortName, value: friendValue, fraction: friendFraction,
+                isWinner: !iLead && !tied, primary: false)
+        }
+    }
+
+    private var friendShortName: String { "Them" }
+
+    private func row(label: String, value: Double, fraction: Double, isWinner: Bool, primary: Bool) -> some View {
+        HStack(spacing: 8) {
+            Text(label)
+                .font(.system(.caption2, design: .rounded).weight(.bold))
+                .foregroundStyle(BinSightTokens.Color.softInk)
+                .frame(width: 38, alignment: .leading)
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    Capsule()
+                        .fill(BinSightTokens.Color.softInk.opacity(0.10))
+                    Capsule()
+                        .fill(primary ? tint : tint.opacity(0.55))
+                        .frame(width: Swift.max(8, geo.size.width * fraction))
+                        .animation(.spring(response: 0.55, dampingFraction: 0.8), value: fraction)
+                }
+            }
+            .frame(height: 10)
+            HStack(spacing: 3) {
+                Text(formatted(value) + (unit.isEmpty ? "" : " \(unit)"))
+                    .font(.system(.caption2, design: .rounded).weight(.heavy).monospacedDigit())
+                    .foregroundStyle(BinSightTokens.Color.ink)
+                    .lineLimit(1)
+                    .fixedSize()
+                    .minimumScaleFactor(0.7)
+                if isWinner {
+                    Image(systemName: "crown.fill")
+                        .font(.system(size: 9, weight: .black))
+                        .foregroundStyle(BinSightTokens.Color.hazard)
+                }
+            }
+            .frame(width: 76, alignment: .trailing)
+        }
+    }
+
+    private func formatted(_ v: Double) -> String {
+        if digits == 0 { return String(Int(v.rounded())) }
+        return String(format: "%.\(digits)f", v)
     }
 }
 

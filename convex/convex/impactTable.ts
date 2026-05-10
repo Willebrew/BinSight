@@ -51,6 +51,10 @@ export const RECYCLE_FACTORS: Record<string, ImpactFactor> = {
   pet: factor(1.07, 0.025, "EPA WARM v16 - PET, recycled vs. landfilled"),
   hdpe: factor(0.86, 0.05, "EPA WARM v16 - HDPE, recycled vs. landfilled"),
   ldpe: factor(0.69, 0.01, "EPA WARM v16 - LDPE film, recycled vs. landfilled"),
+  // Thin flexible plastic (chip bags, candy wrappers, food pouches, plastic
+  // bags). Empty wrapper mass typically 3-8g - use 0.005kg as the default.
+  film: factor(0.69, 0.005, "EPA WARM v16 - LDPE film, recycled vs. landfilled (flexible packaging)"),
+  wrapper: factor(0.69, 0.005, "EPA WARM v16 - LDPE film, recycled vs. landfilled (flexible packaging)"),
   pp: factor(1.02, 0.03, "EPA WARM v16 - PP, recycled vs. landfilled"),
   ps: factor(2.43, 0.02, "EPA WARM v16 - PS, recycled vs. landfilled"),
   plastic: factor(0.95, 0.03, "EPA WARM v16 - mixed plastics, recycled vs. landfilled"),
@@ -91,47 +95,113 @@ export type Co2Estimate = {
 };
 
 /**
+ * Per-source mass uncertainty (fraction of mass).
+ *   verified (search snippet w/ explicit grams) → ±5%
+ *   model    (vision estimate from the photo)  → ±20%
+ *   default  (no estimate, WARM fallback used)  → ±30%
+ *
+ * Combined with the WARM factor band (±20% on midKgPerKg) using a
+ * relative-error sum so the displayed CO₂e range honestly widens when
+ * we're guessing the mass.
+ */
+const MASS_UNCERTAINTY: Record<string, number> = {
+  verified: 0.05,
+  model: 0.20,
+  default: 0.30,
+};
+
+/**
  * Compute the avoided-CO2 estimate for a single item.
  *
  * @param material  free-form material string (lowercased internally)
  * @param decision  recycle | compost | trash | hazard
  * @param massGramsHint  optional model-supplied mass in grams; undefined → defaults
+ * @param massSource    where the mass came from (controls range width)
  */
 export function estimateCo2(
-  material: string,
-  decision: string,
+  material: string | undefined,
+  decision: string | undefined,
   massGramsHint: number | undefined,
+  massSource: "verified" | "model" | "default" = "model",
 ): Co2Estimate {
-  const m = material.toLowerCase().trim();
+  // Streaming partial JSON can hand us undefined fields before the model
+  // has finished writing them — coerce to safe strings instead of crashing.
+  const m = normalizeMaterial(material);
+  const d = decision ?? "trash";
 
   // Trash and hazard contribute zero credited savings (hazard might even be
   // negative impact, but we don't claim a credit for it).
-  if (decision !== "recycle" && decision !== "compost") {
-    const fallbackMass = pickFactor(m, decision).defaultMassKg;
+  if (d !== "recycle" && d !== "compost") {
+    const fallbackMass = pickFactor(m, d).defaultMassKg;
     return {
       co2Kg: 0,
       co2KgLow: 0,
       co2KgHigh: 0,
-      method: decision === "hazard"
+      method: d === "hazard"
         ? "Hazardous: must be diverted; no recycling credit applied."
         : "Landfilled: no avoided emissions credit applied.",
       massKg: massGramsHint !== undefined ? massGramsHint / 1000 : fallbackMass,
     };
   }
 
-  const f = pickFactor(m, decision);
-  const massKg =
-    massGramsHint !== undefined && Number.isFinite(massGramsHint) && massGramsHint > 0
-      ? massGramsHint / 1000
-      : f.defaultMassKg;
+  const f = pickFactor(m, d);
+  const haveHint =
+    massGramsHint !== undefined && Number.isFinite(massGramsHint) && massGramsHint > 0;
+  const massKg = haveHint ? (massGramsHint as number) / 1000 : f.defaultMassKg;
+  // If no hint was supplied we fell back to the WARM default mass — that's
+  // the highest-uncertainty case regardless of what the caller said.
+  const effectiveSource = haveHint ? massSource : "default";
+  const massFrac = MASS_UNCERTAINTY[effectiveSource] ?? MASS_UNCERTAINTY.model;
+  const factorFrac = RANGE_FRAC; // ±20% on the WARM factor itself
+
+  // Combine the two relative-error bands. Using a simple sum is
+  // conservative (true propagation in quadrature would be tighter) but
+  // makes the displayed range visibly honest about mass guessing.
+  const totalFrac = Math.min(0.6, massFrac + factorFrac);
+  const mid = f.midKgPerKg * massKg;
 
   return {
-    co2Kg: round3(f.midKgPerKg * massKg),
-    co2KgLow: round3(f.lowKgPerKg * massKg),
-    co2KgHigh: round3(f.highKgPerKg * massKg),
+    co2Kg: round3(mid),
+    co2KgLow: round3(mid * (1 - totalFrac)),
+    co2KgHigh: round3(mid * (1 + totalFrac)),
     method: f.source,
     massKg,
   };
+}
+
+/** Public-API: look up the WARM default mass (grams) for a material. */
+export function defaultMassG(material: string | undefined, decision: string | undefined): number {
+  const m = normalizeMaterial(material);
+  const d = decision ?? "trash";
+  return pickFactor(m, d).defaultMassKg * 1000;
+}
+
+/**
+ * Map the model's free-form material string to one of our WARM factor keys.
+ * Catches common variants like "flexible plastic", "metallized film",
+ * "candy wrapper", "chip bag" → "film" so the default mass is realistic
+ * (a Skittles bag is ~5g, not the 30g generic-plastic default).
+ */
+export function normalizeMaterial(raw: string | undefined): string {
+  const m = (raw ?? "unknown").toLowerCase().trim();
+  if (!m) return "unknown";
+  if (/(film|wrapper|pouch|chip bag|candy bag|metalliz|multi.?layer|flexible)/.test(m)) {
+    return "film";
+  }
+  if (/(cardboard|corrugated)/.test(m)) return "cardboard";
+  if (/news/.test(m)) return "newspaper";
+  if (/glass/.test(m)) return "glass";
+  if (/aluminu?m/.test(m)) return "aluminum";
+  if (/steel|tin/.test(m)) return "steel";
+  if (/pet\b|polyethylene terephthalate/.test(m)) return "pet";
+  if (/hdpe/.test(m)) return "hdpe";
+  if (/ldpe/.test(m)) return "ldpe";
+  if (/polypropylene|\bpp\b/.test(m)) return "pp";
+  if (/polystyrene|styrofoam|\bps\b/.test(m)) return "ps";
+  if (/paper/.test(m)) return "paper";
+  if (/plastic/.test(m)) return "plastic";
+  if (/food|organic|compost/.test(m)) return "organic";
+  return m;
 }
 
 function pickFactor(material: string, decision: string): ImpactFactor {
