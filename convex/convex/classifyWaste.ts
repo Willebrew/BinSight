@@ -273,21 +273,23 @@ export const run = action({
           updated = true;
         }
 
-        // Apply mass-grounding results: re-run estimateCo2 with the
-        // verified mass, attach the source as kind="material", link from
-        // the item via sourceIndices.
+        // Apply spec-search results. We attach the material source even
+        // when no gram value was extractable (mass.massG === 0) so every
+        // item ends up with at least one citation for what it's made of.
         massResults.forEach((mass, i) => {
           if (!mass) return;
           updated = true;
           const item = items[i];
-          const co2 = estimateCo2(item.material, item.decision, mass.massG);
-          item.estimatedMassG = mass.massG;
-          item.massSource = "verified";
-          item.co2Kg = co2.co2Kg;
-          item.co2KgLow = co2.co2KgLow;
-          item.co2KgHigh = co2.co2KgHigh;
-          item.co2Method = `${co2.method} (mass via ${hostOf(mass.source.url)})`;
-          // Add the mass source to the ranked list (or merge if already there).
+          const haveMass = mass.massG > 0;
+          if (haveMass) {
+            const co2 = estimateCo2(item.material, item.decision, mass.massG);
+            item.estimatedMassG = mass.massG;
+            item.massSource = "verified";
+            item.co2Kg = co2.co2Kg;
+            item.co2KgLow = co2.co2KgLow;
+            item.co2KgHigh = co2.co2KgHigh;
+            item.co2Method = `${co2.method} (mass via ${hostOf(mass.source.url)})`;
+          }
           const existingIdx = ranked.findIndex((s) => s.url === mass.source.url);
           let newIdx: number;
           if (existingIdx >= 0) {
@@ -365,7 +367,7 @@ const OFFICIAL_HOSTS = [
   /(^|\.)energy\.gov$/i,
   /(^|\.)gov$/i,
   /(^|\.)mil$/i,
-  // Common municipal recycling programs
+  // Common municipal recycling programs (US)
   /(^|\.)sfenvironment\.org$/i,
   /(^|\.)recology\.com$/i,
   /(^|\.)nyc\.gov$/i,
@@ -373,9 +375,25 @@ const OFFICIAL_HOSTS = [
   /(^|\.)seattle\.gov$/i,
   /(^|\.)portlandoregon\.gov$/i,
   /(^|\.)austintexas\.gov$/i,
+  /(^|\.)denvergov\.org$/i,
+  /(^|\.)bouldercolorado\.gov$/i,
+  /(^|\.)chicago\.gov$/i,
+  /(^|\.)bostonma\.gov$/i,
+  /(^|\.)sandiego\.gov$/i,
+  /(^|\.)phoenix\.gov$/i,
+  /(^|\.)houstontx\.gov$/i,
+  /(^|\.)atlantaga\.gov$/i,
+  /(^|\.)minneapolismn\.gov$/i,
   /(^|\.)dccc\.org$/i,
   /(^|\.)call2recycle\.org$/i, // manufacturer take-back
   /(^|\.)earth911\.com$/i,
+  // Industry / standards bodies (material identification)
+  /(^|\.)astm\.org$/i,
+  /(^|\.)iso\.org$/i,
+  /(^|\.)plasticsindustry\.org$/i,
+  /(^|\.)aluminum\.org$/i,
+  /(^|\.)glasspackaging\.org$/i,
+  /(^|\.)afandpa\.org$/i,           // paper & packaging
 ];
 
 const AUTHORITATIVE_HOSTS = [

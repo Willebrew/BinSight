@@ -11,16 +11,27 @@ struct HistoryView: View {
             if rows.isEmpty {
                 emptyState
             } else {
-                ScrollView {
-                    LazyVStack(spacing: 10) {
-                        ForEach(rows) { row in
-                            HistoryRow(doc: row, onTap: { openId = row._id })
+                List {
+                    ForEach(rows) { row in
+                        Button { openId = row._id } label: {
+                            HistoryRow(doc: row)
+                        }
+                        .buttonStyle(.plain)
+                        .listRowInsets(EdgeInsets(top: 6, leading: 18, bottom: 6, trailing: 18))
+                        .listRowBackground(Color.clear)
+                        .listRowSeparator(.hidden)
+                        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                            Button(role: .destructive) {
+                                Task { try? await ConvexService.shared.deleteClassification(id: row._id) }
+                            } label: {
+                                Label("Delete", systemImage: "trash")
+                            }
                         }
                     }
-                    .padding(.horizontal, 18)
-                    .padding(.top, 4)
-                    .padding(.bottom, 110)
                 }
+                .listStyle(.plain)
+                .scrollContentBackground(.hidden)
+                .contentMargins(.bottom, 130, for: .scrollContent)
             }
         }
         .navigationTitle("History")
@@ -43,7 +54,9 @@ struct HistoryView: View {
     private var emptyState: some View {
         VStack(spacing: 14) {
             MascotArtView(mood: .thinking, size: 112, accessory: "tray.fill")
-            Text("No scans yet").font(.system(.headline, design: .rounded).weight(.heavy)).foregroundStyle(BinSightTokens.Color.ink)
+            Text("No scans yet")
+                .font(.system(.headline, design: .rounded).weight(.heavy))
+                .foregroundStyle(BinSightTokens.Color.ink)
             Text("Tap the camera tab to start scanning waste.")
                 .font(.system(.callout, design: .rounded).weight(.semibold))
                 .foregroundStyle(BinSightTokens.Color.softInk)
@@ -58,120 +71,106 @@ struct HistoryView: View {
 
 private struct HistoryRow: View {
     let doc: ClassificationDoc
-    let onTap: () -> Void
-    @State private var dragOffset: CGFloat = 0
-    @State private var deleteHinted = false
-
-    private let deleteThreshold: CGFloat = -88
 
     var body: some View {
-        ZStack(alignment: .trailing) {
-            // Delete background
-            HStack {
-                Spacer()
-                Image(systemName: "trash.fill")
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 28)
-            }
-            .frame(maxWidth: .infinity)
-            .frame(height: 96)
-            .background(BinSightTokens.Color.trash, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-            .opacity(min(1, abs(dragOffset) / 88))
-
-            // Main row
-            Button(action: onTap) { rowContent }
-                .buttonStyle(.plain)
-                .offset(x: dragOffset)
-                .gesture(
-                    DragGesture()
-                        .onChanged { v in
-                            dragOffset = min(0, v.translation.width)
-                            let crossed = dragOffset < deleteThreshold
-                            if crossed != deleteHinted {
-                                deleteHinted = crossed
-                                let g = UIImpactFeedbackGenerator(style: .light); g.impactOccurred()
-                            }
-                        }
-                        .onEnded { v in
-                            if v.translation.width < deleteThreshold {
-                                Task { try? await ConvexService.shared.deleteClassification(id: doc._id) }
-                                withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
-                                    dragOffset = -600
-                                }
-                            } else {
-                                withAnimation(.spring(response: 0.35, dampingFraction: 0.78)) {
-                                    dragOffset = 0
-                                }
-                            }
-                        }
-                )
-        }
-    }
-
-    private var rowContent: some View {
-        HStack(spacing: 12) {
-            // Decision color band
-            VStack {
-                Image(systemName: duoDecisionSymbol(doc.items.first?.decision ?? "trash"))
-                    .font(.system(size: 15, weight: .heavy))
-                    .foregroundStyle(.white)
-                    .frame(width: 32, height: 32)
-                    .background(decisionColor, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-                Spacer(minLength: 0)
-            }
-            .frame(height: 64)
-
-            // Image
-            if let urlString = doc.imageUrl, let url = URL(string: urlString) {
-                AsyncImage(url: url) { img in img.resizable().scaledToFill() }
-                placeholder: { Color.gray.opacity(0.2) }
-                    .frame(width: 64, height: 64)
-                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-            }
-
-            // Title + meta
-            VStack(alignment: .leading, spacing: 4) {
-                Text(doc.items.first?.label.capitalized ?? (doc.status == "pending" ? "Classifying…" : "-"))
+        HStack(spacing: 14) {
+            thumbnail
+            VStack(alignment: .leading, spacing: 6) {
+                Text(doc.items.first?.label.capitalized
+                     ?? (doc.status == "pending" ? "Classifying…" : "—"))
                     .font(.system(.subheadline, design: .rounded).weight(.heavy))
                     .foregroundStyle(BinSightTokens.Color.ink)
                     .lineLimit(1)
-                if let first = doc.items.first {
-                    HStack(spacing: 6) {
-                        Text(first.decision.capitalized)
-                            .font(.caption2.weight(.bold))
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, 7).padding(.vertical, 3)
-                            .background(decisionColor, in: Capsule())
-                        if let region = regionLabel {
-                            Label(region, systemImage: "mappin")
-                                .font(.system(.caption2, design: .rounded).weight(.bold))
-                                .foregroundStyle(BinSightTokens.Color.softInk)
-                                .lineLimit(1)
-                        }
+                HStack(spacing: 6) {
+                    decisionPill
+                    if let region = regionLabel {
+                        Label(region, systemImage: "mappin")
+                            .labelStyle(.titleAndIcon)
+                            .font(.system(.caption2, design: .rounded).weight(.bold))
+                            .foregroundStyle(BinSightTokens.Color.softInk)
+                            .lineLimit(1)
+                    }
+                    if let kg = primaryCo2 {
+                        Text(String(format: "%.2f kg", kg))
+                            .font(.caption2.monospacedDigit().weight(.semibold))
+                            .foregroundStyle(BinSightTokens.Color.recycle)
                     }
                 }
-                if let rules = doc.localRules, !rules.isEmpty {
-                    Text(rules)
-                        .font(.caption2)
-                        .foregroundStyle(BinSightTokens.Color.softInk)
-                        .lineLimit(2)
-                }
+                Text(dateLabel)
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(BinSightTokens.Color.softInk)
             }
-            Spacer()
+            Spacer(minLength: 0)
             Image(systemName: "chevron.right")
                 .font(.caption.weight(.bold))
-                .foregroundStyle(.tertiary)
+                .foregroundStyle(BinSightTokens.Color.softInk.opacity(0.5))
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
-        .frame(height: 96)
-        .background(.white, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(BinSightTokens.Color.stroke, lineWidth: 1.5))
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.white, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous)
+            .stroke(BinSightTokens.Color.stroke, lineWidth: 1.5))
+    }
+
+    private var thumbnail: some View {
+        Group {
+            if let urlString = doc.imageUrl, let url = URL(string: urlString) {
+                AsyncImage(url: url) { phase in
+                    switch phase {
+                    case .success(let image):
+                        image.resizable().scaledToFill()
+                    default:
+                        thumbnailPlaceholder
+                    }
+                }
+            } else {
+                thumbnailPlaceholder
+            }
+        }
+        .frame(width: 60, height: 60)
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(alignment: .bottomLeading) {
+            Image(systemName: duoDecisionSymbol(doc.items.first?.decision ?? "trash"))
+                .font(.system(size: 10, weight: .heavy))
+                .foregroundStyle(.white)
+                .padding(5)
+                .background(decisionColor, in: Circle())
+                .overlay(Circle().stroke(.white, lineWidth: 1.5))
+                .offset(x: -4, y: 4)
+        }
+    }
+
+    private var thumbnailPlaceholder: some View {
+        ZStack {
+            decisionColor.opacity(0.2)
+            Image(systemName: duoDecisionSymbol(doc.items.first?.decision ?? "trash"))
+                .foregroundStyle(decisionColor)
+        }
+    }
+
+    private var decisionPill: some View {
+        Text((doc.items.first?.decision ?? "—").capitalized)
+            .font(.caption2.weight(.bold))
+            .foregroundStyle(.white)
+            .padding(.horizontal, 8).padding(.vertical, 3)
+            .background(decisionColor, in: Capsule())
     }
 
     private var regionLabel: String? {
         let parts = [doc.city, doc.state].compactMap { $0 }.filter { !$0.isEmpty }
         return parts.first
+    }
+
+    private var dateLabel: String {
+        Date(timeIntervalSince1970: doc.capturedAt / 1000)
+            .formatted(.relative(presentation: .named))
+    }
+
+    private var primaryCo2: Double? {
+        let confirmed = doc.items.filter { $0.reviewState == "confirmed" }
+        let total = confirmed.reduce(0.0) { $0 + $1.co2Kg }
+        return total > 0 ? total : nil
     }
 
     private var decisionColor: Color {

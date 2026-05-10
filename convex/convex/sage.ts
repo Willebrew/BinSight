@@ -142,6 +142,58 @@ const wasteSchema = {
 };
 
 /**
+ * Hosts that almost never have anything useful for waste classification.
+ * Stock-photo, image-aggregator, and pure-listing sites get cited often
+ * because they have keyword-rich titles, but their snippets don't
+ * actually state any rule or spec — so we drop them at the source.
+ */
+export const JUNK_HOST_PATTERNS = [
+  "alamy.com",
+  "shutterstock.com",
+  "istockphoto.com",
+  "stock.adobe.com",
+  "vecteezy.com",
+  "dreamstime.com",
+  "pinterest.com",
+  "youtube.com",
+  "youtu.be",
+  "tiktok.com",
+  "kaggle.com",
+  "facebook.com",
+  "twitter.com",
+  "x.com",
+  "instagram.com",
+  "amazon.com",
+  "ebay.com",
+  "etsy.com",
+  "alibaba.com",
+] as const;
+
+const JUNK_REGEX = JUNK_HOST_PATTERNS.map(
+  (host) => new RegExp(`(^|\\.)${host.replace(/\./g, "\\.")}$`, "i"),
+);
+
+export function isJunkHost(host: string): boolean {
+  return JUNK_REGEX.some((re) => re.test(host));
+}
+
+export function isJunkUrl(url: string): boolean {
+  try {
+    return isJunkHost(new URL(url).hostname.replace(/^www\./, ""));
+  } catch {
+    return true;
+  }
+}
+
+/** Snippet must mention an actual disposal action to count as a rule source. */
+const RULE_KEYWORDS = /\b(recycl|compost|trash|landfill|garbage|hazard|dispose|curbside|bin|cart)\w*/i;
+
+/** Snippet must mention a unit + plausible material descriptor to count as a spec source. */
+const SPEC_KEYWORDS = /\b(\d+(?:\.\d+)?\s*(?:g|grams?|gm|oz|ounces?|lb|kg)|aluminum|plastic|polypropylene|polyethylene|polystyrene|PET|HDPE|LDPE|paper|cardboard|glass)\b/i;
+
+const JUNK_DENYLIST = JUNK_HOST_PATTERNS.map((h) => `-${h}`);
+
+/**
  * Search the web for local recycling rules and return them as RawSources
  * (kind="rule"). Designed to run in parallel with item-spec lookups
  * after the vision pass identifies what materials are present.
@@ -177,16 +229,26 @@ export async function lookupLocalRules(
           },
           body: JSON.stringify({
             query,
-            max_results: 4,
+            max_results: 5,
             max_tokens_per_page: 2048,
             country: state ? "US" : undefined,
+            search_domain_filter: JUNK_DENYLIST,
           }),
         });
         if (!res.ok) return [] as RawSource[];
         const json: any = await res.json();
         const results: any[] = Array.isArray(json?.results) ? json.results : [];
         return results
-          .filter((r) => typeof r?.url === "string")
+          .filter((r) => {
+            if (typeof r?.url !== "string") return false;
+            if (isJunkUrl(r.url)) return false;
+            const snippet = typeof r?.snippet === "string" ? r.snippet : "";
+            // The page must actually mention a disposal action — otherwise
+            // it's a results-shaped 404 that won't justify any decision.
+            if (!snippet.trim()) return false;
+            if (!RULE_KEYWORDS.test(snippet)) return false;
+            return true;
+          })
           .map((r) => ({
             url: r.url as string,
             title: r.title,
@@ -198,12 +260,11 @@ export async function lookupLocalRules(
     );
 
     const flat = all.flat();
-    // Dedup by URL, prefer official-tier hosts.
     const byUrl = new Map<string, RawSource>();
     for (const s of flat) {
       if (!byUrl.has(s.url)) byUrl.set(s.url, s);
     }
-    const sources = Array.from(byUrl.values()).slice(0, 6);
+    const sources = Array.from(byUrl.values()).slice(0, 4);
     const summary = sources
       .slice(0, 2)
       .map((s) => `${s.publisher}: ${(s.snippet || "").trim().slice(0, 200)}`)
@@ -549,42 +610,88 @@ export async function lookupItemMass(
 ): Promise<{ massG: number; source: RawSource } | undefined> {
   const apiKey = process.env.PERPLEXITY_API_KEY;
   if (!apiKey) return undefined;
-  const query = `typical empty mass in grams of ${item.label} (${item.material})`;
+  // Two queries in parallel: a focused spec search (for gram values) and
+  // a broader material-identification search (for "what is this thing
+  // made of, what does it weigh, what's the typical size"). Combined,
+  // they guarantee every item gets at least one material-kind source —
+  // even if no extractable gram value shows up anywhere.
+  const specQuery = `typical empty mass in grams of ${item.label} (${item.material}) — manufacturer specs`;
+  const idQuery = `${item.label} ${item.material} material composition product specs weight`;
+
+  const [specHits, idHits] = await Promise.all([
+    runSpecSearch(apiKey, specQuery),
+    runSpecSearch(apiKey, idQuery),
+  ]);
+
+  // First pass: look for a result with both a relevant snippet AND a
+  // plausible gram/oz number. Prefer results from the focused spec query.
+  const ordered = [...specHits, ...idHits];
+  for (const r of ordered) {
+    const url: string | undefined = r?.url;
+    if (!url || isJunkUrl(url)) continue;
+    const snippet = typeof r?.snippet === "string" ? r.snippet : "";
+    if (!snippet.trim() || !SPEC_KEYWORDS.test(snippet)) continue;
+    const blob = `${r?.title ?? ""} ${snippet}`;
+    const m =
+      blob.match(/(\d{1,4}(?:\.\d+)?)\s*(?:g|grams?|gm)\b/i) ||
+      blob.match(/(\d{1,2}(?:\.\d+)?)\s*(?:oz|ounces?)\b/i);
+    if (!m) continue;
+    let grams = parseFloat(m[1]);
+    if (m[0].toLowerCase().includes("oz")) grams *= 28.3495;
+    if (!Number.isFinite(grams) || grams < 0.5 || grams > 50_000) continue;
+    return {
+      massG: Number(grams.toFixed(1)),
+      source: {
+        url,
+        title: r?.title,
+        publisher: r?.publisher ?? hostFor(url),
+        snippet: snippet.slice(0, 480),
+        kind: "material",
+      },
+    };
+  }
+
+  // Second pass: no extractable gram value, but still attach a material
+  // identification source so the UI can show *something* citing what
+  // the object is made of. Mass falls back to the WARM table default.
+  for (const r of ordered) {
+    const url: string | undefined = r?.url;
+    if (!url || isJunkUrl(url)) continue;
+    const snippet = typeof r?.snippet === "string" ? r.snippet : "";
+    if (!snippet.trim()) continue;
+    if (!SPEC_KEYWORDS.test(snippet)) continue;
+    return {
+      massG: 0,                     // tells caller to fall back to material default
+      source: {
+        url,
+        title: r?.title,
+        publisher: r?.publisher ?? hostFor(url),
+        snippet: snippet.slice(0, 480),
+        kind: "material",
+      },
+    };
+  }
+
+  return undefined;
+}
+
+async function runSpecSearch(apiKey: string, query: string): Promise<any[]> {
   try {
     const res = await fetch(SEARCH_URL, {
       method: "POST",
       headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ query, max_results: 5 }),
+      body: JSON.stringify({
+        query,
+        max_results: 6,
+        max_tokens_per_page: 1024,
+        search_domain_filter: JUNK_DENYLIST,
+      }),
     });
-    if (!res.ok) return undefined;
+    if (!res.ok) return [];
     const json: any = await res.json();
-    const results: any[] = Array.isArray(json?.results) ? json.results : [];
-    for (const r of results) {
-      const blob = `${r?.title ?? ""} ${r?.snippet ?? ""}`;
-      const m =
-        blob.match(/(\d{1,4}(?:\.\d+)?)\s*(?:g|grams?|gm)\b/i) ||
-        blob.match(/(\d{1,2}(?:\.\d+)?)\s*(?:oz|ounces?)\b/i);
-      if (!m) continue;
-      let grams = parseFloat(m[1]);
-      if (m[0].toLowerCase().includes("oz")) grams *= 28.3495;
-      // Reject implausible values: < 0.5g (specks) or > 50kg (vehicles)
-      if (!Number.isFinite(grams) || grams < 0.5 || grams > 50_000) continue;
-      const url: string | undefined = r?.url;
-      if (!url) continue;
-      return {
-        massG: Number(grams.toFixed(1)),
-        source: {
-          url,
-          title: r?.title,
-          publisher: r?.publisher ?? hostFor(url),
-          snippet: r?.snippet ?? "",
-          kind: "material",
-        },
-      };
-    }
-    return undefined;
+    return Array.isArray(json?.results) ? json.results : [];
   } catch {
-    return undefined;
+    return [];
   }
 }
 
