@@ -438,7 +438,7 @@ export const importInitialCatalog = internalAction({
 });
 ```
 
-Run with: `npx convex run importInitialCatalog`
+Run via an admin context.
 
 #### 5.2 Catalog Management
 - Add/Update items individually or in batches

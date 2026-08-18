@@ -9,7 +9,7 @@
 //   • per-item source attribution (which URL backs which decision)
 //   • per-item disposal-rule citations preferred from the user's own city
 //
-// Env: PERPLEXITY_API_KEY  (set via `npx convex env set PERPLEXITY_API_KEY ...`)
+// Env: PERPLEXITY_API_KEY
 //      PERPLEXITY_MODEL    (optional override; default "anthropic/claude-opus-4-7")
 //
 // Available models via Perplexity Agent API:

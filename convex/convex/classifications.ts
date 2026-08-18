@@ -225,7 +225,7 @@ export const remove = mutation({
 
 /**
  * Wipe every classification + stored image for the calling user.
- * No args. Use from the iOS client or via `npx convex run`.
+ * No args. Use from the iOS client or an admin context.
  */
 export const wipeMine = mutation({
   args: { email: v.optional(v.string()) },

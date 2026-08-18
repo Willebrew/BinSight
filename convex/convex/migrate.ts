@@ -3,9 +3,6 @@ import { internalMutation } from "./_generated/server";
 /**
  * One-shot migration: backfill the new schema fields onto pre-existing
  * `classifications` rows so they validate against the upgraded schema.
- *
- * Run once with:
- *   npx convex run migrate:upgradeClassifications
  */
 export const upgradeClassifications = internalMutation({
   args: {},

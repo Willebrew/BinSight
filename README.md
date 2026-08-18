@@ -85,62 +85,22 @@ Or in Xcode: set `PERPLEXITY_API_KEY` in build settings (or via a gitignored `Se
 
 > ⚠️ **Rotate your Perplexity key** before sharing this build - it's read from Info.plist at runtime, so anyone with the .ipa can extract it. Server-side classification (Convex action) is the production path; v0 is for personal testing only.
 
-### 1. Convex backend (later phase)
+### iOS configuration (Xcode)
 
-```bash
-cd convex
-npm install
-npx convex dev          # interactive: log in, pick or create a project
-```
+Open `BinSight/BinSight.xcodeproj` and add these usage descriptions in Build Settings → Custom iOS Target Properties:
 
-This creates `convex/_generated/` and writes `CONVEX_DEPLOYMENT` into `.env.local`. Note the deployment URL it prints (e.g. `https://your-deployment.convex.cloud`).
-
-### 2. Set server-only secrets
-
-```bash
-# from /convex
-npx convex env set PERPLEXITY_API_KEY <your-rotated-perplexity-key>
-npx convex env set AUTH_RESEND_KEY    <your-resend-api-key>
-npx convex env set AUTH_EMAIL_FROM    "BinSight <onboarding@yourdomain>"   # optional
-npx convex env list
-```
-
-> ⚠️ **Rotate the Perplexity key** before going public. Never commit it.
-> The repo's `.gitignore` already excludes `.env*` and `convex/_generated/`.
-
-### 3. iOS configuration (Xcode)
-
-Open `BinSight/BinSight.xcodeproj` and:
-
-1. **Add the Convex Swift package**: *File → Add Package Dependencies…*
-   `https://github.com/get-convex/convex-swift` → product `ConvexMobile`.
-2. **Set `CONVEX_URL` in Build Settings → Custom iOS Target Properties**:
-   `CONVEX_URL` = `https://your-deployment.convex.cloud` (string).
-3. **Add usage descriptions** (same place):
-   - `NSCameraUsageDescription` - "Used to scan waste items."
-   - `NSContactsUsageDescription` - "Hashed locally to find friends already on BinSight."
-   - `NSLocationWhenInUseUsageDescription` - "Used to surface local recycling rules."
-
-### 4. Run
-
-```bash
-# terminal 1
-cd convex && npx convex dev
-# terminal 2 - open the Xcode project, run on iOS 26 simulator
-```
-
-Sign in with your email, paste the OTP, take a photo of a recyclable, and watch the result come back via a live Convex subscription.
+- `NSCameraUsageDescription` - "Used to scan waste items."
+- `NSContactsUsageDescription` - "Hashed locally to find friends already on BinSight."
+- `NSLocationWhenInUseUsageDescription` - "Used to surface local recycling rules."
 
 ## End-to-end verification
 
-1. `npx convex dev` running and showing `Convex functions ready!`
-2. iOS sim → email sign in → OTP verify → camera grants
-3. Capture a plastic bottle photo
-4. `npx convex logs` shows the `classifyWaste:run` action call
-5. Result card displays per-item recycle/trash decision with citations within ~6s
-6. History tab shows the captured image alongside the model output
-7. Dashboard updates totals within 1s (via real-time subscription)
-8. Toggle Reduce Transparency in simulator accessibility settings - Liquid Glass surfaces fall back gracefully
+1. iOS sim → email sign in → OTP verify → camera grants
+2. Capture a plastic bottle photo
+3. Result card displays per-item recycle/trash decision with citations within ~6s
+4. History tab shows the captured image alongside the model output
+5. Dashboard updates totals within 1s (via real-time subscription)
+6. Toggle Reduce Transparency in simulator accessibility settings - Liquid Glass surfaces fall back gracefully
 
 ## Privacy
 
